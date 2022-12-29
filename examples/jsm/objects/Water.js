@@ -157,8 +157,8 @@ class Water extends Mesh {
 				void main() {
 
 					#include <logdepthbuf_fragment>
-					vec4 noise = getNoise( worldPosition.xz * size );
-					vec3 surfaceNormal = normalize( noise.xzy * vec3( 1.5, 1.0, 1.5 ) );
+					vec4 noise = getNoise( worldPosition.xy * size );
+					vec3 surfaceNormal = normalize( noise.xyz * vec3( 1.5, 1.0, 1.5 ) );
 
 					vec3 diffuseLight = vec3(0.0);
 					vec3 specularLight = vec3(0.0);
@@ -169,7 +169,7 @@ class Water extends Mesh {
 
 					float distance = length(worldToEye);
 
-					vec2 distortion = surfaceNormal.xz * ( 0.001 + 1.0 / distance ) * distortionScale;
+					vec2 distortion = surfaceNormal.xy * ( 0.001 + 1.0 / distance ) * distortionScale;
 					vec3 reflectionSample = vec3( texture2D( mirrorSampler, mirrorCoord.xy / mirrorCoord.w + distortion ) );
 
 					float theta = max( dot( eyeDirection, surfaceNormal ), 0.0 );
@@ -264,7 +264,8 @@ class Water extends Mesh {
 			mirrorPlane.setFromNormalAndCoplanarPoint( normal, mirrorWorldPosition );
 			mirrorPlane.applyMatrix4( mirrorCamera.matrixWorldInverse );
 
-			clipPlane.set( mirrorPlane.normal.x, mirrorPlane.normal.y, mirrorPlane.normal.z, mirrorPlane.constant );
+			// clipPlane.set( mirrorPlane.normal.x, mirrorPlane.normal.y, mirrorPlane.normal.z, mirrorPlane.constant );
+			clipPlane.set( 0, 0, -1, mirrorPlane.constant );
 
 			const projectionMatrix = mirrorCamera.projectionMatrix;
 

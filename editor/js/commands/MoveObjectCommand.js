@@ -48,7 +48,7 @@ class MoveObjectCommand extends Command {
 		const children = this.newParent.children;
 		children.splice( this.newIndex, 0, this.object );
 		this.object.parent = this.newParent;
-
+// 先从之前的父级中移除 插入到新的父子的后代中 
 		this.object.dispatchEvent( { type: 'added' } );
 		this.editor.signals.sceneGraphChanged.dispatch();
 

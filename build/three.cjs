@@ -12469,6 +12469,7 @@ function WebGLProgram(renderer, cacheKey, parameters, bindingStates) {
 	const defines = parameters.defines;
 	let vertexShader = parameters.vertexShader;
 	let fragmentShader = parameters.fragmentShader;
+	console.log(fragmentShader);
 	const shadowMapTypeDefine = generateShadowMapTypeDefine(parameters);
 	const envMapTypeDefine = generateEnvMapTypeDefine(parameters);
 	const envMapModeDefine = generateEnvMapModeDefine(parameters);
@@ -12995,6 +12996,7 @@ function WebGLPrograms(renderer, cubemaps, cubeuvmaps, extensions, capabilities,
 		}
 		if (program === undefined) {
 			program = new WebGLProgram(renderer, cacheKey, parameters, bindingStates);
+			console.log(parameters);
 			programs.push(program);
 		}
 		return program;
@@ -32677,3 +32679,4 @@ exports.ZeroSlopeEnding = ZeroSlopeEnding;
 exports.ZeroStencilOp = ZeroStencilOp;
 exports._SRGBAFormat = _SRGBAFormat;
 exports.sRGBEncoding = sRGBEncoding;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoidGhyZWUuY2pzIiwic291cmNlcyI6W10sInNvdXJjZXNDb250ZW50IjpbXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IiJ9

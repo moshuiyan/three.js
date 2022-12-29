@@ -488,6 +488,7 @@ function WebGLPrograms( renderer, cubemaps, cubeuvmaps, extensions, capabilities
 		if ( program === undefined ) {
 
 			program = new WebGLProgram( renderer, cacheKey, parameters, bindingStates );
+			console.log(parameters);
 			programs.push( program );
 
 		}

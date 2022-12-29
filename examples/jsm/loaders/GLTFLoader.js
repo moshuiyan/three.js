@@ -789,7 +789,7 @@ class GLTFMaterialsClearcoatExtension {
 
 }
 
-/**
+/**p
  * Iridescence Materials Extension
  *
  * Specification: https://github.com/KhronosGroup/glTF/tree/master/extensions/2.0/Khronos/KHR_materials_iridescence

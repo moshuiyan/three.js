@@ -12471,6 +12471,7 @@
 		const defines = parameters.defines;
 		let vertexShader = parameters.vertexShader;
 		let fragmentShader = parameters.fragmentShader;
+		console.log(fragmentShader);
 		const shadowMapTypeDefine = generateShadowMapTypeDefine(parameters);
 		const envMapTypeDefine = generateEnvMapTypeDefine(parameters);
 		const envMapModeDefine = generateEnvMapModeDefine(parameters);
@@ -12997,6 +12998,7 @@
 			}
 			if (program === undefined) {
 				program = new WebGLProgram(renderer, cacheKey, parameters, bindingStates);
+				console.log(parameters);
 				programs.push(program);
 			}
 			return program;
@@ -32683,3 +32685,4 @@
 	Object.defineProperty(exports, '__esModule', { value: true });
 
 }));
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoidGhyZWUuanMiLCJzb3VyY2VzIjpbXSwic291cmNlc0NvbnRlbnQiOltdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiIn0=

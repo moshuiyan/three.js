@@ -24,11 +24,11 @@ class SimplifyModifier {
 
 		// this modifier can only process indexed and non-indexed geomtries with a position attribute
 
-		for ( const name in attributes ) {
+		// for ( const name in attributes ) {
 
-			if ( name !== 'position' ) geometry.deleteAttribute( name );
+		// 	if ( name !== 'position' ) geometry.deleteAttribute( name );
 
-		}
+		// }
 
 		geometry = BufferGeometryUtils.mergeVertices( geometry );
 
@@ -38,17 +38,23 @@ class SimplifyModifier {
 
 		const vertices = [];
 		const faces = [];
+		const normals = [];
+		const uvs = [];
 
 		// add vertices
 
 		const positionAttribute = geometry.getAttribute( 'position' );
-
+		const normalTypeArr = geometry.getAttribute( 'normal' )?.array;
+		const uvTypeArr = geometry.getAttribute( 'uv' )?.array;
+		console.log( uvTypeArr , normalTypeArr);
 		for ( let i = 0; i < positionAttribute.count; i ++ ) {
 
 			const v = new Vector3().fromBufferAttribute( positionAttribute, i );
 
 			const vertex = new Vertex( v );
 			vertices.push( vertex );
+			normals.push( [ normalTypeArr[ i * 3 ], normalTypeArr[ i * 3 + 1 ], normalTypeArr[ i * 3 + 2 ] ] );
+			uvs.push( [ uvTypeArr[ i*2 ], uvTypeArr[ i*2 + 1 ] ] );
 
 		}
 
@@ -115,6 +121,8 @@ class SimplifyModifier {
 
 		const simplifiedGeometry = new BufferGeometry();
 		const position = [];
+		const normal = [];
+		const uv = [];
 
 		index = [];
 
@@ -124,6 +132,8 @@ class SimplifyModifier {
 
 			const vertex = vertices[ i ].position;
 			position.push( vertex.x, vertex.y, vertex.z );
+			normal.push( ...normals[ i ] );
+			uv.push( ...uvs[ i ] );
 			// cache final index to GREATLY speed up faces reconstruction
 			vertices[ i ].id = i;
 
@@ -141,6 +151,8 @@ class SimplifyModifier {
 		//
 
 		simplifiedGeometry.setAttribute( 'position', new Float32BufferAttribute( position, 3 ) );
+		simplifiedGeometry.setAttribute( 'normal', new Float32BufferAttribute( normal, 3 ) );
+		simplifiedGeometry.setAttribute( 'uv', new Float32BufferAttribute( uv, 2 ) );
 		simplifiedGeometry.setIndex( index );
 
 		return simplifiedGeometry;
@@ -278,7 +290,7 @@ function computeEdgeCostAtVertex( v ) {
 
 }
 
-function removeVertex( v, vertices ) {
+function removeVertex( v, vertices, normals, uvs ) {
 
 	console.assert( v.faces.length === 0 );
 
@@ -290,6 +302,8 @@ function removeVertex( v, vertices ) {
 	}
 
 	removeFromArray( vertices, v );
+	normals && removeFromArray( normals, v );
+	uvs && removeFromArray( uvs, v );
 
 }
 
@@ -318,14 +332,14 @@ function removeFace( f, faces ) {
 
 }
 
-function collapse( vertices, faces, u, v ) { // u and v are pointers to vertices of an edge
+function collapse( vertices, faces, u, v, noramls, uvs ) { // u and v are pointers to vertices of an edge
 
 	// Collapse the edge uv by moving vertex u onto v
 
 	if ( ! v ) {
 
 		// u is a vertex all by itself so just delete it..
-		removeVertex( u, vertices );
+		removeVertex( u, vertices, noramls, uvs );
 		return;
 
 	}
@@ -358,7 +372,7 @@ function collapse( vertices, faces, u, v ) { // u and v are pointers to vertices
 	}
 
 
-	removeVertex( u, vertices );
+	removeVertex( u, vertices, noramls, uvs );
 
 	// recompute the edge collapse costs in neighborhood
 	for ( let i = 0; i < tmpVertices.length; i ++ ) {

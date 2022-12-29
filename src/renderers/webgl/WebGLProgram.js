@@ -398,6 +398,7 @@ function WebGLProgram( renderer, cacheKey, parameters, bindingStates ) {
 
 	let vertexShader = parameters.vertexShader;
 	let fragmentShader = parameters.fragmentShader;
+	console.log(fragmentShader);
 
 	const shadowMapTypeDefine = generateShadowMapTypeDefine( parameters );
 	const envMapTypeDefine = generateEnvMapTypeDefine( parameters );
