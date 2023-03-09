@@ -44,7 +44,7 @@ class Layers {
 
 	test( layers ) {
 
-		return ( this.mask & layers.mask ) !== 0;
+		return ( this.mask & layers.mask ) !== 0;// 令人迷惑  不过同层肯定不等于0
 
 	}
 

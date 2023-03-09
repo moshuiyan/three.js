@@ -59,7 +59,7 @@ class BufferGeometry extends EventDispatcher {
 
 	setIndex( index ) {
 
-		if ( Array.isArray( index ) ) {
+		if ( Array.isArray( index ) ) {// 如果是数组就转为定型数组
 
 			this.index = new ( arrayNeedsUint32( index ) ? Uint32BufferAttribute : Uint16BufferAttribute )( index, 1 );
 

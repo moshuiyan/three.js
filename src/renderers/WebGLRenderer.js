@@ -691,13 +691,13 @@ function WebGLRenderer( parameters = {} ) {
 
 		if ( scene === null ) scene = _emptyScene; // renderBufferDirect second parameter used to be fog (could be null)
 
-		const frontFaceCW = ( object.isMesh && object.matrixWorld.determinant() < 0 );
+		const frontFaceCW = ( object.isMesh && object.matrixWorld.determinant() < 0 );//确定是否顺时针 矩阵的行列式小于0，说明不是正定矩阵 但是顺逆时针绘制 跟这个有什么关系
 
-		const program = setProgram( camera, scene, geometry, material, object );
+		const program = setProgram( camera, scene, geometry, material, object ); //  输入uniform数据
 
-		state.setMaterial( material, frontFaceCW );
+		state.setMaterial( material, frontFaceCW );// 设置三角形绘制的正方向
 
-		//
+		//rangeFactor是偏移量，也就是列数， 计算出绘制顶点的起点索引和终点索引
 
 		let index = geometry.index;
 		let rangeFactor = 1;
@@ -716,7 +716,7 @@ function WebGLRenderer( parameters = {} ) {
 
 		let drawStart = drawRange.start * rangeFactor;
 		let drawEnd = ( drawRange.start + drawRange.count ) * rangeFactor;
-
+		//  group就是 将一个几何体 拆分（也不一定是拆分可以重合）为不同子集，从而可以使用多个材质，所以说，真的有这种情况吗，一般来说一个几何体就是一组顶点，一次就能绘制完毕。
 		if ( group !== null ) {
 
 			drawStart = Math.max( drawStart, group.start * rangeFactor );
@@ -726,10 +726,10 @@ function WebGLRenderer( parameters = {} ) {
 
 		if ( index !== null ) {
 
-			drawStart = Math.max( drawStart, 0 );
+			drawStart = Math.max( drawStart, 0 ); // drawstart可能小于零吗
 			drawEnd = Math.min( drawEnd, index.count );
 
-		} else if ( position !== undefined && position !== null ) {
+		} else if ( position !== undefined && position !== null ) {// 无索引 
 
 			drawStart = Math.max( drawStart, 0 );
 			drawEnd = Math.min( drawEnd, position.count );
@@ -740,9 +740,10 @@ function WebGLRenderer( parameters = {} ) {
 
 		if ( drawCount < 0 || drawCount === Infinity ) return;
 
-		//
+		//这里的计算校验太多了吧  难道之前出过什么bug 
 
-		bindingStates.setup( object, material, program, geometry, index );
+		bindingStates.setup( object, material, program, geometry, index ); // 放着
+		console.log(bindingStates);
 
 		let attribute;
 		let renderer = bufferRenderer;
@@ -751,12 +752,12 @@ function WebGLRenderer( parameters = {} ) {
 
 			attribute = attributes.get( index );
 
-			renderer = indexedBufferRenderer;
+			renderer = indexedBufferRenderer; //  原来在这里  有索引用另一个
 			renderer.setIndex( attribute );
 
 		}
 
-		//
+		//根据Object的类型 mesh line points isSprite 确定绘制模式 点线面  
 
 		if ( object.isMesh ) {
 
@@ -803,8 +804,8 @@ function WebGLRenderer( parameters = {} ) {
 
 		}
 
-		if ( object.isInstancedMesh ) {
-
+		if ( object.isInstancedMesh ) {// 这个是优化  渲染多个相似的几何体， 顶点相同，材质类型相同，但是uniforms不同， 按常规绘制方式，需要绘制多次，用了对应的api之后只需要绘制一次。
+			// 但是奇怪的是里面没有用索引，直接都是drawArrays
 			renderer.renderInstances( drawStart, drawCount, object.count );
 
 		} else if ( geometry.isInstancedBufferGeometry ) {
@@ -816,7 +817,7 @@ function WebGLRenderer( parameters = {} ) {
 
 		} else {
 
-			renderer.render( drawStart, drawCount );
+			renderer.render( drawStart, drawCount );//  有无索引前面已经分开了
 
 		}
 
@@ -979,19 +980,19 @@ function WebGLRenderer( parameters = {} ) {
 		renderStateStack.push( currentRenderState );
 
 		_projScreenMatrix.multiplyMatrices( camera.projectionMatrix, camera.matrixWorldInverse );
-		_frustum.setFromProjectionMatrix( _projScreenMatrix );
+		_frustum.setFromProjectionMatrix( _projScreenMatrix );// 根据投影矩阵确定 世界坐标系中的可视区域， 内含六个平面
 
-		_localClippingEnabled = this.localClippingEnabled;
-		_clippingEnabled = clipping.init( this.clippingPlanes, _localClippingEnabled, camera );
+		_localClippingEnabled = this.localClippingEnabled; // 是否使用对象级的 裁剪平面 默认否
+		_clippingEnabled = clipping.init( this.clippingPlanes, _localClippingEnabled, camera );// 👍🏻不明白
 
 		currentRenderList = renderLists.get( scene, renderListStack.length );
-		currentRenderList.init();
+		currentRenderList.init();//  清理一些引用关系 似乎都没有调用过push方法，为什么这里就直接清理了
 
 		renderListStack.push( currentRenderList );
 
-		projectObject( scene, camera, 0, _this.sortObjects );
-
-		currentRenderList.finish();
+		projectObject( scene, camera, 0, _this.sortObjects ); //  递归处理 物体可见性 光影相关数据
+		console.log(currentRenderList, currentRenderState);
+		currentRenderList.finish();    //  清理引用关系
 
 		if ( _this.sortObjects === true ) {
 
@@ -1089,6 +1090,7 @@ function WebGLRenderer( parameters = {} ) {
 
 	};
 
+	// 递归 处理object的可见性  渲染顺序  光照阴影相关  填充currentRenderList     renderItem就是这里放进去的  group是几何体的，同组几何体所用材质应该相同
 	function projectObject( object, camera, groupOrder, sortObjects ) {
 
 		if ( object.visible === false ) return;
@@ -1131,7 +1133,7 @@ function WebGLRenderer( parameters = {} ) {
 
 					if ( material.visible ) {
 
-						currentRenderList.push( object, geometry, material, groupOrder, _vector3.z, null );
+						currentRenderList.push( object, geometry, material, groupOrder, _vector3.z, null );// group的来历
 
 					}
 
@@ -1220,7 +1222,7 @@ function WebGLRenderer( parameters = {} ) {
 		if ( transparentObjects.length > 0 ) renderObjects( transparentObjects, scene, camera );
 
 		// Ensure depth buffer writing is enabled so it can be cleared on next render
-
+		// 开启深度测试 深度写入 颜色写入       恢复默认设置
 		state.buffers.depth.setTest( true );
 		state.buffers.depth.setMask( true );
 		state.buffers.color.setMask( true );
@@ -1278,7 +1280,7 @@ function WebGLRenderer( parameters = {} ) {
 
 	}
 
-	function renderObjects( renderList, scene, camera ) {
+	function renderObjects( renderList, scene, camera ) { //遍历渲染
 
 		const overrideMaterial = scene.isScene === true ? scene.overrideMaterial : null;
 
@@ -1291,7 +1293,7 @@ function WebGLRenderer( parameters = {} ) {
 			const material = overrideMaterial === null ? renderItem.material : overrideMaterial;
 			const group = renderItem.group;
 
-			if ( object.layers.test( camera.layers ) ) {
+			if ( object.layers.test( camera.layers ) ) {// 如果物体可见
 
 				renderObject( object, scene, camera, geometry, material, group );
 
@@ -1476,7 +1478,7 @@ function WebGLRenderer( parameters = {} ) {
 		const environment = material.isMeshStandardMaterial ? scene.environment : null;
 		const encoding = ( _currentRenderTarget === null ) ? _this.outputEncoding : ( _currentRenderTarget.isXRRenderTarget === true ? _currentRenderTarget.texture.encoding : LinearEncoding );
 		const envMap = ( material.isMeshStandardMaterial ? cubeuvmaps : cubemaps ).get( material.envMap || environment );
-		const vertexAlphas = material.vertexColors === true && !! geometry.attributes.color && geometry.attributes.color.itemSize === 4;
+		const vertexAlphas = material.vertexColors === true && !! geometry.attributes.color && geometry.attributes.color.itemSize === 4; //是否 顶点颜色透明度分量
 		const vertexTangents = !! material.normalMap && !! geometry.attributes.tangent;
 		const morphTargets = !! geometry.morphAttributes.position;
 		const morphNormals = !! geometry.morphAttributes.normal;

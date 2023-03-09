@@ -111,7 +111,8 @@
 
 					// Hughes & Moeller '99
 					// "Building an Orthonormal Basis from a Unit Vector."
-
+// 它这个制造正交基底的方法有点迷啊  好像是把法线旋转90度就完了 但是，哦下面又单位化了
+// 判断谁大，应该是防止分量为0 的情况
 					if ( Math.abs( zAxis.x ) > Math.abs( zAxis.z ) ) {
 
 						yAxis.set( - zAxis.y, zAxis.x, 0 );

@@ -61,26 +61,29 @@
 
 			};
 
-			init();
-			animate();
+		//  创建一个作为模板的物体， 分开前面和后面 ，材质上给裁剪面参数
 
-			function createPlaneStencilGroup( geometry, plane, renderOrder ) {
+		const baseMat = new THREE.MeshBasicMaterial();
+		baseMat.depthWrite = false;//
+		baseMat.depthTest = false;
+		baseMat.colorWrite = false;// 颜色写入为什么也关闭 因为这个要绘制到模板缓冲区 并不想让它绘制到颜色缓冲区，如果直接用visible就不会绘制了，是不行的。 
+		baseMat.stencilWrite = true; // 执行写入 模板缓冲区
+		baseMat.stencilFunc = THREE.AlwaysStencilFunc; // 使用模板时采用的函数，有点像混合透明度的那个意思？ 这个是默认值
+
+
+		init();
+		animate();
+function createPlaneStencilGroup( geometry, plane, renderOrder ) {
 
 				const group = new THREE.Group();
-				const baseMat = new THREE.MeshBasicMaterial();
-				baseMat.depthWrite = false;
-				baseMat.depthTest = false;
-				baseMat.colorWrite = false;
-				baseMat.stencilWrite = true;
-				baseMat.stencilFunc = THREE.AlwaysStencilFunc;
 
-				// back faces
+	// back faces
 				const mat0 = baseMat.clone();
 				mat0.side = THREE.BackSide;
 				mat0.clippingPlanes = [ plane ];
-				mat0.stencilFail = THREE.IncrementWrapStencilOp;
-				mat0.stencilZFail = THREE.IncrementWrapStencilOp;
-				mat0.stencilZPass = THREE.IncrementWrapStencilOp;
+				mat0.stencilFail = THREE.IncrementWrapStencilOp;  //  模版测试失败     模板缓冲区的值
+				mat0.stencilZFail = THREE.IncrementWrapStencilOp; // 模板测试通过 ，深度测试未通过   递减
+				mat0.stencilZPass = THREE.IncrementWrapStencilOp; // 模板测试通过 ，深度测试通过或未开的 行为
 
 				const mesh0 = new THREE.Mesh( geometry, mat0 );
 				mesh0.renderOrder = renderOrder;
@@ -131,7 +134,7 @@
 					new THREE.Plane( new THREE.Vector3( 0, - 1, 0 ), 0 ),
 					new THREE.Plane( new THREE.Vector3( 0, 0, - 1 ), 0 )
 				];
-
+//  裁剪面的显示在这里
 				planeHelpers = planes.map( p => new THREE.PlaneHelper( p, 2, 0xffffff ) );
 				planeHelpers.forEach( ph => {
 
@@ -147,7 +150,7 @@
 				// Set up clip plane rendering
 				planeObjects = [];
 				const planeGeom = new THREE.PlaneGeometry( 4, 4 );
-
+				//  一个group就是一个扭结模板 ，它循环了三次，目的是分别渲染三个截断面  
 				for ( let i = 0; i < 3; i ++ ) {
 
 					const poGroup = new THREE.Group();
@@ -163,7 +166,7 @@
 							roughness: 0.75,
 							clippingPlanes: planes.filter( p => p !== plane ),
 
-							stencilWrite: true,
+							stencilWrite:	true,
 							stencilRef: 0,
 							stencilFunc: THREE.NotEqualStencilFunc,
 							stencilFail: THREE.ReplaceStencilOp,
@@ -171,6 +174,7 @@
 							stencilZPass: THREE.ReplaceStencilOp,
 
 						} );
+						// 面渲染后就清理模板缓冲区
 					const po = new THREE.Mesh( planeGeom, planeMat );
 					po.onAfterRender = function ( renderer ) {
 
@@ -178,7 +182,9 @@
 
 					};
 
-					po.renderOrder = i + 1.1;
+					po.renderOrder = i + 1.1;//平面的渲染顺序在 扭结模板之后，这样在渲染平面的时候就有模板了 平面渲染完成再清理掉缓冲区， 
+
+					//  另外就是three会按一定的顺序渲染， 但是只会给同层级的物体排序， 也就是说，两组物体整体上一定是前后分开渲染的。 
 
 					object.add( stencilGroup );
 					poGroup.add( po );
@@ -186,7 +192,8 @@
 					scene.add( poGroup );
 
 				}
-
+				//  这个才是扭结的材质
+			
 				const material = new THREE.MeshStandardMaterial( {
 
 					color: 0xFFC107,

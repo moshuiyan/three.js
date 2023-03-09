@@ -31,7 +31,7 @@ function WebGLBufferRenderer( gl, extensions, info, capabilities ) {
 
 		} else {
 
-			extension = extensions.get( 'ANGLE_instanced_arrays' );
+			extension = extensions.get( 'ANGLE_instanced_arrays' );// 这个扩展仅webgl1可用，
 			methodName = 'drawArraysInstancedANGLE';
 
 			if ( extension === null ) {

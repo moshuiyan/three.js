@@ -306,7 +306,6 @@
 		}
 
 	}
-
 	/* GLTFREGISTRY */
 
 	function GLTFRegistry() {

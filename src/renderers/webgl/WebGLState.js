@@ -723,13 +723,13 @@ function WebGLState( gl, extensions, capabilities ) {
 	}
 
 	function setMaterial( material, frontFaceCW ) {
-
+	// 双面则关闭背面剔除
 		material.side === DoubleSide
 			? disable( gl.CULL_FACE )
 			: enable( gl.CULL_FACE );
 
 		let flipSided = ( material.side === BackSide );
-		if ( frontFaceCW ) flipSided = ! flipSided;
+		if ( frontFaceCW ) flipSided = ! flipSided;// 如果是顺时针  那么本来要剔除背面，现在就要剔除正面，反之亦然。
 
 		setFlipSided( flipSided );
 
@@ -760,7 +760,7 @@ function WebGLState( gl, extensions, capabilities ) {
 
 	}
 
-	//
+	//设置三角形绘制的正方向 true就是顺时针 反之逆时针
 
 	function setFlipSided( flipSided ) {
 
