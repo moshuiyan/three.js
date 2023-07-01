@@ -199,8 +199,8 @@ function Loader( editor ) {
 					const { DRACOLoader } = await import( 'three/addons/loaders/DRACOLoader.js' );
 
 					const loader = new DRACOLoader();
-					loader.setDecoderPath( '../examples/js/libs/draco/' );
-					loader.decodeDracoFile( contents, function ( geometry ) {
+					loader.setDecoderPath( '../examples/jsm/libs/draco/' );
+					loader.parse( contents, function ( geometry ) {
 
 						let object;
 
@@ -263,14 +263,21 @@ function Loader( editor ) {
 
 					const contents = event.target.result;
 
-					const { DRACOLoader } = await import( 'three/addons/loaders/DRACOLoader.js' );
 					const { GLTFLoader } = await import( 'three/addons/loaders/GLTFLoader.js' );
+					const { DRACOLoader } = await import( 'three/addons/loaders/DRACOLoader.js' );
+					const { KTX2Loader } = await import( 'three/addons/loaders/KTX2Loader.js' );
+					const { MeshoptDecoder } = await import( 'three/addons/libs/meshopt_decoder.module.js' );
 
 					const dracoLoader = new DRACOLoader();
-					dracoLoader.setDecoderPath( '../examples/js/libs/draco/gltf/' );
+					dracoLoader.setDecoderPath( '../examples/jsm/libs/draco/gltf/' );
+
+					const ktx2Loader = new KTX2Loader();
+					ktx2Loader.setTranscoderPath( '../examples/jsm/libs/basis/' );
 
 					const loader = new GLTFLoader();
 					loader.setDRACOLoader( dracoLoader );
+					loader.setKTX2Loader( ktx2Loader );
+					loader.setMeshoptDecoder( MeshoptDecoder );
 					loader.parse( contents, '', function ( result ) {
 
 						const scene = result.scene;
@@ -278,6 +285,8 @@ function Loader( editor ) {
 
 						scene.animations.push( ...result.animations );
 						editor.execute( new AddObjectCommand( editor, scene ) );
+
+						dracoLoader.dispose();
 
 					} );
 
@@ -296,24 +305,14 @@ function Loader( editor ) {
 
 					const contents = event.target.result;
 
-					let loader;
+					const { DRACOLoader } = await import( 'three/addons/loaders/DRACOLoader.js' );
+					const { GLTFLoader } = await import( 'three/addons/loaders/GLTFLoader.js' );
 
-					if ( isGLTF1( contents ) ) {
+					const dracoLoader = new DRACOLoader();
+					dracoLoader.setDecoderPath( '../examples/jsm/libs/draco/gltf/' );
 
-						alert( 'Import of glTF asset not possible. Only versions >= 2.0 are supported. Please try to upgrade the file to glTF 2.0 using glTF-Pipeline.' );
-
-					} else {
-
-						const { DRACOLoader } = await import( 'three/addons/loaders/DRACOLoader.js' );
-						const { GLTFLoader } = await import( 'three/addons/loaders/GLTFLoader.js' );
-
-						const dracoLoader = new DRACOLoader();
-						dracoLoader.setDecoderPath( '../examples/js/libs/draco/gltf/' );
-
-						loader = new GLTFLoader( manager );
-						loader.setDRACOLoader( dracoLoader );
-
-					}
+					const loader = new GLTFLoader( manager );
+					loader.setDRACOLoader( dracoLoader );
 
 					loader.parse( contents, '', function ( result ) {
 
@@ -322,6 +321,8 @@ function Loader( editor ) {
 
 						scene.animations.push( ...result.animations );
 						editor.execute( new AddObjectCommand( editor, scene ) );
+
+						dracoLoader.dispose();
 
 					} );
 
@@ -443,7 +444,7 @@ function Loader( editor ) {
 
 					const loader = new LDrawLoader();
 					loader.setPath( '../../examples/models/ldraw/officialLibrary/' );
-					loader.parse( event.target.result, undefined, function ( group ) {
+					loader.parse( event.target.result, function ( group ) {
 
 						group.name = filename;
 						// Convert from LDraw coordinates: rotate 180 degrees around OX
@@ -956,7 +957,7 @@ function Loader( editor ) {
 					const { GLTFLoader } = await import( 'three/addons/loaders/GLTFLoader.js' );
 
 					const dracoLoader = new DRACOLoader();
-					dracoLoader.setDecoderPath( '../examples/js/libs/draco/gltf/' );
+					dracoLoader.setDecoderPath( '../examples/jsm/libs/draco/gltf/' );
 
 					const loader = new GLTFLoader();
 					loader.setDRACOLoader( dracoLoader );
@@ -967,6 +968,8 @@ function Loader( editor ) {
 
 						scene.animations.push( ...result.animations );
 						editor.execute( new AddObjectCommand( editor, scene ) );
+
+						dracoLoader.dispose();
 
 					} );
 
@@ -982,7 +985,7 @@ function Loader( editor ) {
 					const { GLTFLoader } = await import( 'three/addons/loaders/GLTFLoader.js' );
 
 					const dracoLoader = new DRACOLoader();
-					dracoLoader.setDecoderPath( '../examples/js/libs/draco/gltf/' );
+					dracoLoader.setDecoderPath( '../examples/jsm/libs/draco/gltf/' );
 
 					const loader = new GLTFLoader( manager );
 					loader.setDRACOLoader( dracoLoader );
@@ -993,6 +996,8 @@ function Loader( editor ) {
 						scene.animations.push( ...result.animations );
 						editor.execute( new AddObjectCommand( editor, scene ) );
 
+						dracoLoader.dispose();
+
 					} );
 
 					break;
@@ -1002,41 +1007,6 @@ function Loader( editor ) {
 			}
 
 		}
-
-	}
-
-	function isGLTF1( contents ) {
-
-		let resultContent;
-
-		if ( typeof contents === 'string' ) {
-
-			// contents is a JSON string
-			resultContent = contents;
-
-		} else {
-
-			const magic = THREE.LoaderUtils.decodeText( new Uint8Array( contents, 0, 4 ) );
-
-			if ( magic === 'glTF' ) {
-
-				// contents is a .glb file; extract the version
-				const version = new DataView( contents ).getUint32( 4, true );
-
-				return version < 2;
-
-			} else {
-
-				// contents is a .gltf file
-				resultContent = THREE.LoaderUtils.decodeText( new Uint8Array( contents ) );
-
-			}
-
-		}
-
-		const json = JSON.parse( resultContent );
-
-		return ( json.asset != undefined && json.asset.version[ 0 ] < 2 );
 
 	}
 

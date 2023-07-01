@@ -15,14 +15,16 @@ const assets = [
 	'../examples/jsm/libs/chevrotain.module.min.js',
 	'../examples/jsm/libs/fflate.module.js',
 
-	'../examples/js/libs/draco/draco_decoder.js',
-	'../examples/js/libs/draco/draco_decoder.wasm',
-	'../examples/js/libs/draco/draco_encoder.js',
-	'../examples/js/libs/draco/draco_wasm_wrapper.js',
+	'../examples/jsm/libs/draco/draco_decoder.js',
+	'../examples/jsm/libs/draco/draco_decoder.wasm',
+	'../examples/jsm/libs/draco/draco_encoder.js',
+	'../examples/jsm/libs/draco/draco_wasm_wrapper.js',
 
-	'../examples/js/libs/draco/gltf/draco_decoder.js',
-	'../examples/js/libs/draco/gltf/draco_decoder.wasm',
-	'../examples/js/libs/draco/gltf/draco_wasm_wrapper.js',
+	'../examples/jsm/libs/draco/gltf/draco_decoder.js',
+	'../examples/jsm/libs/draco/gltf/draco_decoder.wasm',
+	'../examples/jsm/libs/draco/gltf/draco_wasm_wrapper.js',
+
+	'../examples/jsm/libs/meshopt_decoder.module.js',
 
 	'../examples/jsm/libs/motion-controllers.module.js',
 
@@ -37,6 +39,7 @@ const assets = [
 	'../examples/jsm/loaders/FBXLoader.js',
 	'../examples/jsm/loaders/GLTFLoader.js',
 	'../examples/jsm/loaders/KMZLoader.js',
+	'../examples/jsm/loaders/KTX2Loader.js',
 	'../examples/jsm/loaders/IFCLoader.js',
 	'../examples/jsm/loaders/ifc/web-ifc-api.js',
 	'../examples/jsm/loaders/ifc/web-ifc.wasm',
@@ -64,7 +67,6 @@ const assets = [
 
 	'../examples/jsm/environments/RoomEnvironment.js',
 
-	'../examples/jsm/exporters/ColladaExporter.js',
 	'../examples/jsm/exporters/DRACOExporter.js',
 	'../examples/jsm/exporters/GLTFExporter.js',
 	'../examples/jsm/exporters/OBJExporter.js',
@@ -73,8 +75,6 @@ const assets = [
 	'../examples/jsm/exporters/USDZExporter.js',
 
 	'../examples/jsm/helpers/VertexNormalsHelper.js',
-
-	'../examples/jsm/geometries/TeapotGeometry.js',
 
 	'../examples/jsm/webxr/VRButton.js',
 	'../examples/jsm/webxr/XRControllerModelFactory.js',
@@ -176,7 +176,6 @@ const assets = [
 	'./js/Sidebar.Geometry.TorusGeometry.js',
 	'./js/Sidebar.Geometry.TorusKnotGeometry.js',
 	'./js/Sidebar.Geometry.TubeGeometry.js',
-	'./js/Sidebar.Geometry.TeapotGeometry.js',
 	'./js/Sidebar.Material.js',
 	'./js/Sidebar.Material.BooleanProperty.js',
 	'./js/Sidebar.Material.ColorProperty.js',
@@ -190,6 +189,7 @@ const assets = [
 	'./js/Toolbar.js',
 	'./js/Viewport.js',
 	'./js/Viewport.Camera.js',
+	'./js/Viewport.Shading.js',
 	'./js/Viewport.Info.js',
 	'./js/Viewport.Selector.js',
 	'./js/Viewport.ViewHelper.js',
@@ -268,8 +268,8 @@ async function networkFirst( request ) {
 		if ( request.url.endsWith( 'editor/' ) || request.url.endsWith( 'editor/index.html' ) ) { // copied from coi-serviceworker
 
 			const newHeaders = new Headers( response.headers );
-			newHeaders.set( "Cross-Origin-Embedder-Policy", "require-corp" );
-			newHeaders.set( "Cross-Origin-Opener-Policy", "same-origin" );
+			newHeaders.set( 'Cross-Origin-Embedder-Policy', 'require-corp' );
+			newHeaders.set( 'Cross-Origin-Opener-Policy', 'same-origin' );
 
 			response = new Response( response.body, { status: response.status, statusText: response.statusText, headers: newHeaders } );
 
