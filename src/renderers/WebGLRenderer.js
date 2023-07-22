@@ -893,9 +893,10 @@ class WebGLRenderer {
 
 			}
 
-		if ( object.isInstancedMesh ) {// 这个是优化  渲染多个相似的几何体， 顶点相同，材质类型相同，但是uniforms不同， 按常规绘制方式，需要绘制多次，用了对应的api之后只需要绘制一次。
-			// 但是奇怪的是里面没有用索引，直接都是drawArrays
-			renderer.renderInstances( drawStart, drawCount, object.count );
+			if ( object.isInstancedMesh ) { // 这个是优化  渲染多个相似的几何体， 顶点相同，材质类型相同，但是uniforms不同， 按常规绘制方式，需要绘制多次，用了对应的api之后只需要绘制一次。
+
+				// 但是奇怪的是里面没有用索引，直接都是drawArrays
+				renderer.renderInstances( drawStart, drawCount, object.count );
 
 			} else if ( geometry.isInstancedBufferGeometry ) {
 

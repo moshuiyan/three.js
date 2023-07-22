@@ -738,7 +738,8 @@ function WebGLState( gl, extensions, capabilities ) {
 	}
 
 	function setMaterial( material, frontFaceCW ) {
-	// 双面则关闭背面剔除
+
+		// 双面则关闭背面剔除
 		material.side === DoubleSide
 			? disable( gl.CULL_FACE )
 			: enable( gl.CULL_FACE );

@@ -266,7 +266,7 @@ class Water extends Mesh {
 			mirrorPlane.applyMatrix4( mirrorCamera.matrixWorldInverse );
 
 			// clipPlane.set( mirrorPlane.normal.x, mirrorPlane.normal.y, mirrorPlane.normal.z, mirrorPlane.constant );
-			clipPlane.set( 0, 0, -1, mirrorPlane.constant );
+			clipPlane.set( 0, 0, - 1, mirrorPlane.constant );
 
 			const projectionMatrix = mirrorCamera.projectionMatrix;
 

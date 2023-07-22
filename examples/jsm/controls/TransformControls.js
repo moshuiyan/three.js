@@ -460,7 +460,7 @@ class TransformControls extends Object3D {
 			}
 
 		} else if ( mode === 'rotate' ) {
-				 
+
 			this._offset.copy( this.pointEnd ).sub( this.pointStart );
 
 			const ROTATION_SPEED = 20 / this.worldPosition.distanceTo( _tempVector.setFromMatrixPosition( this.camera.matrixWorld ) );
@@ -476,11 +476,13 @@ class TransformControls extends Object3D {
 				this.rotationAngle *= ( this._endNorm.cross( this._startNorm ).dot( this.eye ) < 0 ? 1 : - 1 );
 
 			} else if ( axis === 'XYZE' ) {
+
 				// 这个旋转轴的计算没看懂 下面角度计算也看不懂 ,  懂了 因为辅助平面一直面朝相机 ，也就是绝对的xyo面， 所以 这个轴的位置就是 也在这个辅助面内和 offset垂直，但是如此这个轴很可能在转动的时候在变化
 				this.rotationAxis.copy( this._offset ).cross( this.eye ).normalize(); //  位移在某个方向的投影 作为其旋转角度  这个某个方向  应该就是 绝对的x轴（观察效果得出，未验证）
 				this.rotationAngle = this._offset.dot( _tempVector.copy( this.rotationAxis ).cross( this.eye ) ) * ROTATION_SPEED;
 
 			} else if ( axis === 'X' || axis === 'Y' || axis === 'Z' ) {
+
 				//  这就是常规的xyz轴
 				this.rotationAxis.copy( _unit[ axis ] );
 
@@ -491,7 +493,7 @@ class TransformControls extends Object3D {
 					_tempVector.applyQuaternion( this.worldQuaternion );
 
 				}
-				
+
 				this.rotationAngle = this.pointEnd.angleTo( this.pointStart ); // angleTo计算的角度 是不会超出180的
 
 				this._startNorm.copy( this.pointStart ).normalize();

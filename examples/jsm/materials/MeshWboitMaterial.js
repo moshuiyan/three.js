@@ -11,7 +11,7 @@ const WboitStages = {
 	Acummulation: 1.0,
 	Revealage: 2.0,
 };
-// uv01234  已经移至webglprogram里了 写全了，不用手动引入了。 
+// uv01234  已经移至webglprogram里了 写全了，不用手动引入了。
 
 const WboitBasicShader = {
 
