@@ -11,6 +11,7 @@ const WboitStages = {
 	Acummulation: 1.0,
 	Revealage: 2.0,
 };
+// uv01234  已经移至webglprogram里了 写全了，不用手动引入了。 
 
 const WboitBasicShader = {
 
@@ -38,7 +39,6 @@ const WboitBasicShader = {
  
          #include <common>
          #include <uv_pars_vertex>
-         #include <uv2_pars_vertex>
          #include <envmap_pars_vertex>
          #include <color_pars_vertex>
          #include <fog_pars_vertex>
@@ -52,7 +52,7 @@ const WboitBasicShader = {
              // MeshBasicMaterial
  
              #include <uv_vertex>
-             #include <uv2_vertex>
+            
              #include <color_vertex>
              #include <morphcolor_vertex>
  
@@ -99,7 +99,7 @@ const WboitBasicShader = {
          #include <dithering_pars_fragment>
          #include <color_pars_fragment>
          #include <uv_pars_fragment>
-         #include <uv2_pars_fragment>
+     
          #include <map_pars_fragment>
          #include <alphamap_pars_fragment>
          #include <alphatest_pars_fragment>
@@ -156,9 +156,9 @@ const WboitBasicShader = {
              vec3 outgoingLight = reflectedLight.indirectDiffuse;
  
              #include <envmap_fragment>
-             #include <output_fragment>
+             #include <opaque_fragment>
              #include <tonemapping_fragment>
-             #include <encodings_fragment>
+             #include <colorspace_fragment>
              #include <fog_fragment>
              #include <premultiplied_alpha_fragment>
              #include <dithering_fragment>

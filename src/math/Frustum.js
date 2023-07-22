@@ -5,7 +5,7 @@ import { Plane } from './Plane.js';
 
 const _sphere = /*@__PURE__*/ new Sphere();
 const _vector = /*@__PURE__*/ new Vector3();
-
+// 平截头体，就是由六个平面围成的一个几何体。
 class Frustum {
 
 	constructor( p0 = new Plane(), p1 = new Plane(), p2 = new Plane(), p3 = new Plane(), p4 = new Plane(), p5 = new Plane() ) {

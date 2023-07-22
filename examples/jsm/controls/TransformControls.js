@@ -296,7 +296,7 @@ class TransformControls extends Object3D {
 		const planeIntersect = intersectObjectWithRay( this._plane, _raycaster, true );
 
 		if ( ! planeIntersect ) return;
-
+		//世界坐标下的 鼠标和position连线在 平面上的投影 向量
 		this.pointEnd.copy( planeIntersect.point ).sub( this.worldPositionStart );
 
 		if ( mode === 'translate' ) {
@@ -460,28 +460,28 @@ class TransformControls extends Object3D {
 			}
 
 		} else if ( mode === 'rotate' ) {
-
+				 
 			this._offset.copy( this.pointEnd ).sub( this.pointStart );
 
 			const ROTATION_SPEED = 20 / this.worldPosition.distanceTo( _tempVector.setFromMatrixPosition( this.camera.matrixWorld ) );
 
 			if ( axis === 'E' ) {
 
-				this.rotationAxis.copy( this.eye );
-				this.rotationAngle = this.pointEnd.angleTo( this.pointStart );
+				this.rotationAxis.copy( this.eye );//  e的时候 旋转轴是 视线
+				this.rotationAngle = this.pointEnd.angleTo( this.pointStart ); // angleTo计算的角度 是不会超出180的
 
 				this._startNorm.copy( this.pointStart ).normalize();
 				this._endNorm.copy( this.pointEnd ).normalize();
-
+				//  这里又用叉乘计算出 旋转轴， 和 视线点乘， 如果是同向，那就是正， 这里视线是美俄问题的，但是这个叉乘是用结束叉乘起始，所以这里三元反过来了
 				this.rotationAngle *= ( this._endNorm.cross( this._startNorm ).dot( this.eye ) < 0 ? 1 : - 1 );
 
 			} else if ( axis === 'XYZE' ) {
-
-				this.rotationAxis.copy( this._offset ).cross( this.eye ).normalize();
+				// 这个旋转轴的计算没看懂 下面角度计算也看不懂 ,  懂了 因为辅助平面一直面朝相机 ，也就是绝对的xyo面， 所以 这个轴的位置就是 也在这个辅助面内和 offset垂直，但是如此这个轴很可能在转动的时候在变化
+				this.rotationAxis.copy( this._offset ).cross( this.eye ).normalize(); //  位移在某个方向的投影 作为其旋转角度  这个某个方向  应该就是 绝对的x轴（观察效果得出，未验证）
 				this.rotationAngle = this._offset.dot( _tempVector.copy( this.rotationAxis ).cross( this.eye ) ) * ROTATION_SPEED;
 
 			} else if ( axis === 'X' || axis === 'Y' || axis === 'Z' ) {
-
+				//  这就是常规的xyz轴
 				this.rotationAxis.copy( _unit[ axis ] );
 
 				_tempVector.copy( _unit[ axis ] );
@@ -491,8 +491,16 @@ class TransformControls extends Object3D {
 					_tempVector.applyQuaternion( this.worldQuaternion );
 
 				}
+				
+				this.rotationAngle = this.pointEnd.angleTo( this.pointStart ); // angleTo计算的角度 是不会超出180的
 
-				this.rotationAngle = this._offset.dot( _tempVector.cross( this.eye ).normalize() ) * ROTATION_SPEED;
+				this._startNorm.copy( this.pointStart ).normalize();
+				this._endNorm.copy( this.pointEnd ).normalize();
+				//  这里又用叉乘计算出 旋转轴， 和 视线点乘， 如果是同向，那就是正， 这里视线是美俄问题的，但是这个叉乘是用结束叉乘起始，所以这里三元反过来了
+				this.rotationAngle *= ( this._endNorm.cross( this._startNorm ).dot( this.rotationAxis ) < 0 ? 1 : - 1 );
+
+
+				// this.rotationAngle = this._offset.dot( _tempVector.cross( this.eye ).normalize() ) * ROTATION_SPEED;
 
 			}
 
