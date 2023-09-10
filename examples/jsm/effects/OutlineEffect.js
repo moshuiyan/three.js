@@ -421,7 +421,7 @@ class OutlineEffect {
 				return;
 
 			}
-
+// 先保存一下之前的清除设置， 然后改为当前的设置 一般就是不自动清理，绘制完成之后改回去，真的是何必呢，还是说什么规范，后面的ouline又这么来了一次，直接全部FALSE就完了
 			const currentAutoClear = renderer.autoClear;
 			renderer.autoClear = this.autoClear;
 
@@ -449,7 +449,7 @@ class OutlineEffect {
 
 			renderer.render( scene, camera );
 
-			scene.traverse( restoreOriginalMaterial );
+			scene.traverse( restoreOriginalMaterial );// 绘制完成之后再把材质改回去
 
 			cleanupCache();
 
