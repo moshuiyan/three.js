@@ -340,9 +340,12 @@ class Volume {
 
 		}
 
+<<<<<<< HEAD
 
 		let iLength, jLength;
 
+=======
+>>>>>>> e6b9d24ed75d8fc06cfe92e2a5d34a4be0fe737a
 		if ( ! this.segmentation ) {
 
 			firstDirection.applyMatrix4( volume.inverseMatrix ).normalize();
@@ -353,8 +356,8 @@ class Volume {
 
 		firstDirection.arglet = 'i';
 		secondDirection.arglet = 'j';
-		iLength = Math.floor( Math.abs( firstDirection.dot( dimensions ) ) );
-		jLength = Math.floor( Math.abs( secondDirection.dot( dimensions ) ) );
+		const iLength = Math.floor( Math.abs( firstDirection.dot( dimensions ) ) );
+		const jLength = Math.floor( Math.abs( secondDirection.dot( dimensions ) ) );
 		const planeWidth = Math.abs( iLength * firstSpacing );
 		const planeHeight = Math.abs( jLength * secondSpacing );
 
