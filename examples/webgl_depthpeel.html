@@ -233,7 +233,7 @@ uniform sampler2D uPrevDepthTexture;
 }
 					`
 						);
-
+// 之前之所以走样很严重， 就是因为它一次剥离 ，一层并没有剥离干净， 还有很多残留，导致下一次的时候还要继续，这也是为什么我之前错误的理解深度剥离为把不透光的弄得稀疏为透光的。 还有一件事需要确定一下， 那就是three透明开启关闭对opacity的影响
 					};
 
 					obj.material = clonedMaterial;
