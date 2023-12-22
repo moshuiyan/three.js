@@ -138,7 +138,7 @@
 				scene.add( new THREE.AmbientLight( undefined, 0.5 ) );
 
 				const sphere = new THREE.Mesh(
-					new THREE.SphereBufferGeometry(),
+					new THREE.SphereGeometry(),
 					new THREE.MeshStandardMaterial()
 				);
 				sphere.translateY( 3 ).translateX( 1.5 );
@@ -146,7 +146,7 @@
 				scene.add( sphere );
 
 				const knot = new THREE.Mesh(
-					new THREE.TorusKnotBufferGeometry( undefined, undefined, 128, 32 ),
+					new THREE.TorusKnotGeometry( undefined, undefined, 128, 32 ),
 					new THREE.MeshStandardMaterial( {
 						transparent: true,
 						opacity: 0.7,
@@ -158,7 +158,7 @@
 
 				scene.add(
 					new THREE.Mesh(
-						new THREE.BoxBufferGeometry(),
+						new THREE.BoxGeometry(),
 						new THREE.MeshBasicMaterial( { color: 0xf0a000 } )
 					)
 				);
@@ -167,7 +167,7 @@
 					'textures/sprite0.png'
 				);
 				const plane = new THREE.Mesh(
-					new THREE.PlaneBufferGeometry( 3, 3 ),
+					new THREE.PlaneGeometry( 3, 3 ),
 					new THREE.MeshStandardMaterial( { map: texture, side: THREE.DoubleSide } )
 				);
 				plane.translateX( - 1.6 );
@@ -175,7 +175,7 @@
 				scene.add( plane );
 
 				const plane2 = new THREE.Mesh(
-					new THREE.PlaneBufferGeometry( 3, 3 ),
+					new THREE.PlaneGeometry( 3, 3 ),
 					new THREE.MeshStandardMaterial( {
 						map: texture,
 						transparent: true,

@@ -1,24 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<title>three.js webgl - GLTFloader + Punctual Lights</title>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<link type="text/css" rel="stylesheet" href="main.css">
-	</head>
 
-	<body>
-		<div id="info">
-			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - GLTFLoader + <a href="https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_lights_punctual" target="_blank" rel="noopener">KHR_lights_punctual</a><br />
-			Lamp by
-			<a href="https://www.artstation.com/teresagviegas" target="_blank" rel="noopener">Teresa González Viegas</a>
-		</div>
+<head>
+	<title>three.js webgl - GLTFloader + Punctual Lights</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link type="text/css" rel="stylesheet" href="main.css">
+</head>
 
-		<!-- Import maps polyfill -->
-		<!-- Remove this when import maps will be widely supported -->
-		<script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+<body>
+	<div id="info">
+		<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - GLTFLoader + <a
+			href="https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_lights_punctual"
+			target="_blank" rel="noopener">KHR_lights_punctual</a><br />
+		Lamp by
+		<a href="https://www.artstation.com/teresagviegas" target="_blank" rel="noopener">Teresa González Viegas</a>
+	</div>
 
-		<script type="importmap">
+	<!-- Import maps polyfill -->
+	<!-- Remove this when import maps will be widely supported -->
+	<script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+
+	<script type="importmap">
 			{
 				"imports": {
 					"three": "../build/three.module.js",
@@ -27,105 +30,185 @@
 			}
 		</script>
 
-		<script type="module">
+	<script type="module">
+		
+		import * as THREE from 'three';
 
-			import * as THREE from 'three';
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+		import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
-			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-			import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+		import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+		import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+		// Configure and create Draco decoder.
+		const dracoLoader = new DRACOLoader();
+		dracoLoader.setDecoderPath('jsm/libs/draco/');
+		dracoLoader.setDecoderConfig({ type: 'js' });
 
-			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+		let camera, scene, renderer ,mixer, curAction , start =0;
+		const actions = [] ;
 
-			let camera, scene, renderer;
+		function switchAction(index) {
+			if(curAction === actions[index] && curAction.isRunning()){ 
+            return curAction.fadeOut(0.2)
+        }
+        curAction && curAction.stop() ;
+        if(actions.length){ 
+            actions[index].play()
+            curAction =actions[index]
+        }
+		}
+		const params = {
+			punctualLightsEnabled: true,
+			clapAction(){ 
+				switchAction(0);
+			},
+			speed: 2,
+			danceAction(){switchAction(1);},
+			handsupAction(){switchAction(2);},
+			hiAction(){switchAction(3);},
+			hoverAction(){switchAction(4);},
+			IdleAction(){switchAction(5);},
+			relaxAction(){switchAction(6);},
+			walkAction(){switchAction(7);},
+		};
+
+		init().then(render);
+
+		async function init() {
+
+			const container = document.createElement('div');
+			document.body.appendChild(container);
+
+			camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.25, 20);
+			camera.position.set(- 2, 1.5, 3);
+
+			scene = new THREE.Scene();
+			const textureLoader = new THREE.TextureLoader();
+			const rgbeLoader = new RGBELoader();
+			const envMap = await rgbeLoader.loadAsync('textures/equirectangular/moonless_golf_1k.hdr ');
+			envMap.mapping = THREE.EquirectangularReflectionMapping;
+
+			scene.background = envMap;
+			scene.environment = envMap;
+
+			const loader = new GLTFLoader();
+			loader.setDRACOLoader(dracoLoader);
+			const gltf = await loader.loadAsync('models/gltf/LightsPunctualLamp.glb');
+			// const gltfboy = await loader.loadAsync('models/gltf/boy.glb');
+			const gltfboy0 = await loader.loadAsync('models/gltf/boy0.glb');
+
+			console.log(gltfboy0);
+			scene.add(gltf.scene,);
+			gltfboy0.scene.position.x = -1
+			const animations = gltfboy0.animations;
+
+			mixer = new THREE.AnimationMixer(gltfboy0.scene);
+/* 
+			const clapAction = mixer.clipAction(animations[0]);
+			const danceAction = mixer.clipAction(animations[1]);
+			const handsupAction = mixer.clipAction(animations[2]);
+			const hiAction = mixer.clipAction(animations[3]);
+			const hoverAction = mixer.clipAction(animations[4]);
+			const IdleAction = mixer.clipAction(animations[5]);
+			const relaxAction = mixer.clipAction(animations[6]);
+			const walkAction = mixer.clipAction(animations[7]); */
+
+				for( const animation of  animations){ 
+
+					actions.push( mixer.clipAction( animation))
+				}
+			let character1;
+			for (const child of gltfboy0.scene.children[0].children) {
+				if (child.name !== "character1") {
+					child.visible = false;
+					// break ;
+				} else {
+					character1 = child;
+				}
+			}
+			// character1.position.x = 1 ;
+			scene.add(gltfboy0.scene);
+			let boySkin = textureLoader.load('models/gltf/boy.jpg', () => {
+				character1.material = new THREE.MeshBasicMaterial({ map: boySkin });
+				character1.material.needsUpdate = true;
+			})
+
+			const gui = new GUI();
+			gui.add( params,'speed', 0, 10);
+			gui.add(params,'clapAction');
+			gui.add(params,'danceAction');
+			gui.add(params,'handsupAction');
+			gui.add(params,'hiAction');
+			gui.add(params,'hoverAction');
+			gui.add(params,'IdleAction');
+			gui.add(params,'relaxAction');
+			gui.add(params,'walkAction');
+			gui.add(params, 'punctualLightsEnabled').onChange(toggleLights);
+			gui.open();
+
+			renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.toneMapping = THREE.ACESFilmicToneMapping;
+			renderer.toneMappingExposure = 1;
+			container.appendChild(renderer.domElement);
+
+			const controls = new OrbitControls(camera, renderer.domElement);
+			controls.addEventListener('change', render); // use if there is no animation loop
+			controls.minDistance = 2;
+			controls.maxDistance = 10;
+			controls.target.set(0, 1, 0);
+			controls.update();
+
+			window.addEventListener('resize', onWindowResize);
+
+		}
+
+		function onWindowResize() {
+
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+
+			renderer.setSize(window.innerWidth, window.innerHeight);
+
+			render();
+
+		}
+
+		function toggleLights(visible) {
+
+			scene.traverse(function (object) {
+
+				if (object.isLight) {
+
+					object.visible = visible;
+
+				}
+
+			});
+
+			render();
+
+		}
+
+		//
+
+		function render() {
 			
-			const params = {
-				punctualLightsEnabled: true
-			};
+		}
 
-			init().then( render );
+		function ani(t) {
+			mixer && mixer.update((t - start) /1000 * params.speed )
+			start = t;
+		    renderer && 	renderer.render(scene, camera);
+			requestAnimationFrame( ani);
+		}
 
-			async function init() {
+		ani()
 
-				const container = document.createElement( 'div' );
-				document.body.appendChild( container );
+	</script>
 
-				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.25, 20 );
-				camera.position.set( - 2, 1.5, 3 );
+</body>
 
-				scene = new THREE.Scene();
-
-				const rgbeLoader = new RGBELoader();
-				const envMap = await rgbeLoader.loadAsync( 'textures/equirectangular/moonless_golf_1k.hdr ' );
-				envMap.mapping = THREE.EquirectangularReflectionMapping;
-
-				scene.background = envMap;
-				scene.environment = envMap;
-
-				const loader = new GLTFLoader();
-				const gltf = await loader.loadAsync( 'models/gltf/LightsPunctualLamp.glb' );
-
-				scene.add( gltf.scene );
-
-				const gui = new GUI();
-
-				gui.add( params, 'punctualLightsEnabled' ).onChange( toggleLights );
-				gui.open();
-
-				renderer = new THREE.WebGLRenderer( { antialias: true } );
-				renderer.setPixelRatio( window.devicePixelRatio );
-				renderer.setSize( window.innerWidth, window.innerHeight );
-				renderer.toneMapping = THREE.ACESFilmicToneMapping;
-				renderer.toneMappingExposure = 1;
-				container.appendChild( renderer.domElement );
-
-				const controls = new OrbitControls( camera, renderer.domElement );
-				controls.addEventListener( 'change', render ); // use if there is no animation loop
-				controls.minDistance = 2;
-				controls.maxDistance = 10;
-				controls.target.set( 0, 1, 0 );
-				controls.update();
-
-				window.addEventListener( 'resize', onWindowResize );
-
-			}
-
-			function onWindowResize() {
-
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
-
-				renderer.setSize( window.innerWidth, window.innerHeight );
-
-				render();
-
-			}
-
-			function toggleLights( visible ) {
-
-				scene.traverse( function ( object ) {
-
-					if ( object.isLight ) {
-
-						object.visible = visible;
-
-					}
-
-				} );
-
-				render();
-
-			}
-
-			//
-
-			function render() {
-
-				renderer.render( scene, camera );
-
-			}
-
-		</script>
-
-	</body>
 </html>
