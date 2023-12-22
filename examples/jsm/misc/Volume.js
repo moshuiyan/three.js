@@ -340,13 +340,10 @@ class Volume {
 
 		}
 
-<<<<<<< HEAD
 
-		let iLength, jLength;
 
-=======
->>>>>>> e6b9d24ed75d8fc06cfe92e2a5d34a4be0fe737a
-		if ( ! this.segmentation ) {
+
+		if( ! this.segmentation ) {
 
 			firstDirection.applyMatrix4( volume.inverseMatrix ).normalize();
 			secondDirection.applyMatrix4( volume.inverseMatrix ).normalize();
