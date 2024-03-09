@@ -28,12 +28,7 @@ function WebGLBufferRenderer( gl, extensions, info ) {
 
 	function renderMultiDraw( starts, counts, drawCount ) {
 
-<<<<<<< HEAD
-			extension = extensions.get( 'ANGLE_instanced_arrays' );// 这个扩展仅webgl1可用，
-			methodName = 'drawArraysInstancedANGLE';
-=======
 		if ( drawCount === 0 ) return;
->>>>>>> dev
 
 		const extension = extensions.get( 'WEBGL_multi_draw' );
 
