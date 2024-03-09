@@ -223,7 +223,7 @@ class TransformControls extends Object3D {
 
 		if ( this.object === undefined || this.dragging === true ) return;
 
-		_raycaster.setFromCamera( pointer, this.camera );
+		if ( pointer !== null ) _raycaster.setFromCamera( pointer, this.camera );
 
 		const intersect = intersectObjectWithRay( this._gizmo.picker[ this.mode ], _raycaster );
 
@@ -241,11 +241,11 @@ class TransformControls extends Object3D {
 
 	pointerDown( pointer ) {
 
-		if ( this.object === undefined || this.dragging === true || pointer.button !== 0 ) return;
+		if ( this.object === undefined || this.dragging === true || ( pointer != null && pointer.button !== 0 ) ) return;
 
 		if ( this.axis !== null ) {
 
-			_raycaster.setFromCamera( pointer, this.camera );
+			if ( pointer !== null ) _raycaster.setFromCamera( pointer, this.camera );
 
 			const planeIntersect = intersectObjectWithRay( this._plane, _raycaster, true );
 
@@ -289,9 +289,9 @@ class TransformControls extends Object3D {
 
 		}
 
-		if ( object === undefined || axis === null || this.dragging === false || pointer.button !== - 1 ) return;
+		if ( object === undefined || axis === null || this.dragging === false || ( pointer !== null && pointer.button !== - 1 ) ) return;
 
-		_raycaster.setFromCamera( pointer, this.camera );
+		if ( pointer !== null ) _raycaster.setFromCamera( pointer, this.camera );
 
 		const planeIntersect = intersectObjectWithRay( this._plane, _raycaster, true );
 
@@ -465,8 +465,9 @@ class TransformControls extends Object3D {
 
 			const ROTATION_SPEED = 20 / this.worldPosition.distanceTo( _tempVector.setFromMatrixPosition( this.camera.matrixWorld ) );
 
-			if ( axis === 'E' ) {
+			let _inPlaneRotation = false;
 
+<<<<<<< HEAD
 				this.rotationAxis.copy( this.eye );//  e的时候 旋转轴是 视线
 				this.rotationAngle = this.pointEnd.angleTo( this.pointStart ); // angleTo计算的角度 是不会超出180的
 
@@ -476,6 +477,9 @@ class TransformControls extends Object3D {
 				this.rotationAngle *= ( this._endNorm.cross( this._startNorm ).dot( this.eye ) < 0 ? 1 : - 1 );
 
 			} else if ( axis === 'XYZE' ) {
+=======
+			if ( axis === 'XYZE' ) {
+>>>>>>> dev
 
 				// 这个旋转轴的计算没看懂 下面角度计算也看不懂 ,  懂了 因为辅助平面一直面朝相机 ，也就是绝对的xyo面， 所以 这个轴的位置就是 也在这个辅助面内和 offset垂直，但是如此这个轴很可能在转动的时候在变化
 				this.rotationAxis.copy( this._offset ).cross( this.eye ).normalize(); //  位移在某个方向的投影 作为其旋转角度  这个某个方向  应该就是 绝对的x轴（观察效果得出，未验证）
@@ -494,6 +498,7 @@ class TransformControls extends Object3D {
 
 				}
 
+<<<<<<< HEAD
 				this.rotationAngle = this.pointEnd.angleTo( this.pointStart ); // angleTo计算的角度 是不会超出180的
 
 				this._startNorm.copy( this.pointStart ).normalize();
@@ -503,6 +508,33 @@ class TransformControls extends Object3D {
 
 
 				// this.rotationAngle = this._offset.dot( _tempVector.cross( this.eye ).normalize() ) * ROTATION_SPEED;
+=======
+				_tempVector.cross( this.eye );
+
+				// When _tempVector is 0 after cross with this.eye the vectors are parallel and should use in-plane rotation logic.
+				if ( _tempVector.length() === 0 ) {
+
+					_inPlaneRotation = true;
+
+				} else {
+
+					this.rotationAngle = this._offset.dot( _tempVector.normalize() ) * ROTATION_SPEED;
+
+				}
+
+
+			}
+
+			if ( axis === 'E' || _inPlaneRotation ) {
+
+				this.rotationAxis.copy( this.eye );
+				this.rotationAngle = this.pointEnd.angleTo( this.pointStart );
+
+				this._startNorm.copy( this.pointStart ).normalize();
+				this._endNorm.copy( this.pointEnd ).normalize();
+
+				this.rotationAngle *= ( this._endNorm.cross( this._startNorm ).dot( this.eye ) < 0 ? 1 : - 1 );
+>>>>>>> dev
 
 			}
 
@@ -533,7 +565,7 @@ class TransformControls extends Object3D {
 
 	pointerUp( pointer ) {
 
-		if ( pointer.button !== 0 ) return;
+		if ( pointer !== null && pointer.button !== 0 ) return;
 
 		if ( this.dragging && ( this.axis !== null ) ) {
 
