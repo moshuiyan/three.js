@@ -311,8 +311,12 @@ class Curve {
 		}
 
 		vec.crossVectors( tangents[ 0 ], normal ).normalize();
+// 反正计算出来的法向和副法向 互相垂直，而且在与切向垂直的平面内，切向已经可以确定大的旋转方向，再通过这两个法向可以确定绕切向的旋转
+// 法向的初始方向是由初始切向确定的，取的是最小的那个分量，确保不会和切向平行
+// 如果我把vec看做是上方向，切向看做是新的x轴，那么 normal就是新的z轴， bnoramal 是新的-y轴
 
-		normals[ 0 ].crossVectors( tangents[ 0 ], vec );
+// 
+		normals[ 0 ].crossVectors( tangents[ 0 ], vec );//法向就是上方向，还真没错， 上面那样算只是为了得到上方向，
 		binormals[ 0 ].crossVectors( tangents[ 0 ], normals[ 0 ] );
 
 
@@ -331,11 +335,11 @@ class Curve {
 				vec.normalize();
 
 				const theta = Math.acos( MathUtils.clamp( tangents[ i - 1 ].dot( tangents[ i ] ), - 1, 1 ) ); // clamp for floating pt errors
-
+// 法向做出和切向相同的旋转
 				normals[ i ].applyMatrix4( mat.makeRotationAxis( vec, theta ) );
 
 			}
-
+// 切向没有变化，法向也没有变化，副法向自然也不会变化
 			binormals[ i ].crossVectors( tangents[ i ], normals[ i ] );
 
 		}

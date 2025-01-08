@@ -119,7 +119,7 @@
 
 					void main() {
 						vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
-
+					// 相机相对使用了模型矩阵的顶点的位置,因为下面用的position是模型矩阵转换前的顶点位置 ,至于为何不用模型矩阵的顶点位置,可能是觉得麻烦？
 						vOrigin = vec3( inverse( modelMatrix ) * vec4( cameraPos, 1.0 ) ).xyz;
 						vDirection = position - vOrigin;
 

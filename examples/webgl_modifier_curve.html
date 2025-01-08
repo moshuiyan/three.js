@@ -11,7 +11,8 @@
 	</head>
 	<body>
 		<div id="info">
-			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - curve modifier
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a>
+			webgl - curve modifier
 		</div>
 
 		<script type="importmap">
@@ -24,14 +25,58 @@
 		</script>
 
 		<script type="module">
-			import * as THREE from 'three';
-			import { TransformControls } from 'three/addons/controls/TransformControls.js';
-			import Stats from 'three/addons/libs/stats.module.js';
-			import { Flow } from 'three/addons/modifiers/CurveModifier.js';
-			import { FontLoader } from 'three/addons/loaders/FontLoader.js';
-			import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+			import * as THREE from "three";
+			import { TransformControls } from "three/addons/controls/TransformControls.js";
+			import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+			import Stats from "three/addons/libs/stats.module.js";
+			import { Flow } from "three/addons/modifiers/CurveModifier.js";
+			import { FontLoader } from "three/addons/loaders/FontLoader.js";
+			import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
+			import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+			import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+			export class CustomSinCurve extends THREE.Curve {
+				constructor(turn = 3, depth = 1, radius = 1, axis = "z") {
+					super();
+					this.turn = turn;
+					this.depth = depth;
+					this.axis = axis;
+					this.radius = radius;
+				}
+				getPoint(t, target = new THREE.Vector3()) {
+					// x y 分别取正余弦 可不就是圆
+					let x = t * Math.sin(t * Math.PI * 2 * this.turn) * this.radius;
+					let y = t * Math.cos(t * Math.PI * 2 * this.turn) * this.radius;
+					let z = t * this.depth;
+					if (this.axis === "x") {
+						[x, y, z] = [z, y, -x];
+					}
+					if (this.axis === "y") {
+						[x, y, z] = [x, z, -y];
+					}
+					return target.set(x, y, z);
+				}
+				// t是0-1的一个值 这个方法就是最终返回顶点
+			}
 
-			const ACTION_SELECT = 1, ACTION_NONE = 0;
+			export class HeartCurve extends THREE.Curve {
+				constructor(size = 1) {
+					super();
+					this.size = size;
+				}
+				getPoint(t, target = new THREE.Vector3()) {
+					const {sin,cos,PI} = Math;
+					// x = 16sin³t  [-12,12]
+					// y = 13cos t - 5cos(2t) - 2cos(3t) - cos(4t) [-17,12]
+					t *= 2 * PI;
+					// 这个运算量有点儿大 拉宽 y小于零的部分收缩
+					let y = 13 * cos(t) - 5 * cos(2 * t) - 2 * cos(3 * t) - cos(4 * t);
+					// y * ( y<0 ?.8 : 1);
+					return target.set(this.size * 16 * sin(t) ** 3, y * this.size, 0);
+					// return target.set( sin(t) ** 3, cos(t)-cos(t) ** 4 ,0);
+				}
+			}
+			const ACTION_SELECT = 1,
+				ACTION_NONE = 0;
 			const curveHandles = [];
 			const mouse = new THREE.Vector2();
 
@@ -41,6 +86,7 @@
 				renderer,
 				rayCaster,
 				control,
+				controls,
 				flow,
 				action = ACTION_NONE;
 
@@ -48,173 +94,207 @@
 			animate();
 
 			function init() {
-
 				scene = new THREE.Scene();
 
+				new RGBELoader().load(
+					"textures/memorial.hdr",
+					function (texture, textureData) {
+						//console.log( textureData );
+						//console.log( texture );
+
+						scene.background = texture;
+						scene.environment = texture;
+					}
+				);
 				camera = new THREE.PerspectiveCamera(
 					40,
 					window.innerWidth / window.innerHeight,
 					1,
 					1000
 				);
-				camera.position.set( 2, 2, 4 );
-				camera.lookAt( scene.position );
+				camera.position.set(2, 2, 4);
+				camera.lookAt(scene.position);
+				const spiralCurve0 = new CustomSinCurve(4, 4, 1, "y");
+				const spiralCurve = new HeartCurve(.1,);
+				const initialPoints = spiralCurve.getPoints(100);
+				// [
+				// 	{ x: 1, y: 0, z: - 1 },
+				// 	{ x: 1, y: 0, z: 1 },
+				// 	{ x: - 1, y: 0, z: 1 },
+				// 	{ x: - 1, y: 0, z: - 1 },
+				// ];
 
-				const initialPoints = [
-					{ x: 1, y: 0, z: - 1 },
-					{ x: 1, y: 0, z: 1 },
-					{ x: - 1, y: 0, z: 1 },
-					{ x: - 1, y: 0, z: - 1 },
-				];
-
-				const boxGeometry = new THREE.BoxGeometry( 0.1, 0.1, 0.1 );
+				const boxGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
 				const boxMaterial = new THREE.MeshBasicMaterial();
 
-				for ( const handlePos of initialPoints ) {
-
-					const handle = new THREE.Mesh( boxGeometry, boxMaterial );
-					handle.position.copy( handlePos );
-					curveHandles.push( handle );
-					scene.add( handle );
-
+				for (const handlePos of initialPoints) {
+					const handle = new THREE.Mesh(boxGeometry, boxMaterial);
+					handle.position.copy(handlePos);
+					curveHandles.push(handle);
+					scene.add(handle);
 				}
 
 				const curve = new THREE.CatmullRomCurve3(
-					curveHandles.map( ( handle ) => handle.position )
+					curveHandles.map((handle) => handle.position)
 				);
-				curve.curveType = 'centripetal';
+				curve.curveType = "centripetal";
 				curve.closed = true;
 
-				const points = curve.getPoints( 50 );
+				const points = curve.getPoints(50);
 				const line = new THREE.LineLoop(
-					new THREE.BufferGeometry().setFromPoints( points ),
-					new THREE.LineBasicMaterial( { color: 0x00ff00 } )
+					new THREE.BufferGeometry().setFromPoints(points),
+					new THREE.LineBasicMaterial({ color: 0x00ff00 })
 				);
 
-				scene.add( line );
+				scene.add(line);
 
 				//
 
-				const light = new THREE.DirectionalLight( 0xffaa33, 3 );
-				light.position.set( - 10, 10, 10 );
-				scene.add( light );
+				const light = new THREE.DirectionalLight(0xffaa33, 3);
+				light.position.set(-10, 10, 10);
+				scene.add(light);
 
-				const light2 = new THREE.AmbientLight( 0x003973, 3 );
-				scene.add( light2 );
+				const light2 = new THREE.HemisphereLight(0xffffff, 0xffffff, 2);
+				scene.add(light2);
+				/**造剑 */
+				const metalMat = new THREE.MeshPhysicalMaterial({
+					roughness: 0.5,
+					flatShading: true,
+					metalness: 1,
+					side:THREE.FrontSide
+				});
+				const swordBody = new THREE.CylinderGeometry(
+					0.2,
+					0.2,
+					20,
+					4,
+					40,
+					false,
+					0
+				);
+				const swordTop = new THREE.CylinderGeometry(0, 0.2, 1, 4, 1, true, 0);
+				swordTop.translate(0, 20.5, 0); //
+				swordBody.translate(0, 10, 0);
+				const swordGeo0 = mergeGeometries([swordBody, swordTop], {
+					dispose: true,
+				});
+				swordGeo0.scale(0.3, 0.3, 0.3);
+
+				// swordGeo0.rotateZ(Math.PI / 2);
+				const sword = new THREE.Mesh(swordGeo0, metalMat);
+				//
+
+				flow = new Flow(sword);
+				flow.updateCurve(0, curve);
+				scene.add(flow.object3D);
 
 				//
 
-				const loader = new FontLoader();
-				loader.load( 'fonts/helvetiker_regular.typeface.json', function ( font ) {
+				renderer = new THREE.WebGLRenderer({ antialias: true });
+				renderer.setPixelRatio(window.devicePixelRatio);
+				renderer.setSize(window.innerWidth, window.innerHeight);
+				document.body.appendChild(renderer.domElement);
+				controls = new OrbitControls(camera, renderer.domElement);
 
-					const geometry = new TextGeometry( 'Hello three.js!', {
-						font: font,
-						size: 0.2,
-						height: 0.05,
-						curveSegments: 12,
-						bevelEnabled: true,
-						bevelThickness: 0.02,
-						bevelSize: 0.01,
-						bevelOffset: 0,
-						bevelSegments: 5,
-					} );
-
-					geometry.rotateX( Math.PI );
-
-					const material = new THREE.MeshStandardMaterial( {
-						color: 0x99ffff
-					} );
-
-					const objectToCurve = new THREE.Mesh( geometry, material );
-
-					flow = new Flow( objectToCurve );
-					flow.updateCurve( 0, curve );
-					scene.add( flow.object3D );
-
-				} );
-
-				//
-
-				renderer = new THREE.WebGLRenderer( { antialias: true } );
-				renderer.setPixelRatio( window.devicePixelRatio );
-				renderer.setSize( window.innerWidth, window.innerHeight );
-				document.body.appendChild( renderer.domElement );
-
-				renderer.domElement.addEventListener( 'pointerdown', onPointerDown );
+				renderer.domElement.addEventListener("pointerdown", onPointerDown);
 
 				rayCaster = new THREE.Raycaster();
-				control = new TransformControls( camera, renderer.domElement );
-				control.addEventListener( 'dragging-changed', function ( event ) {
-
-					if ( ! event.value ) {
-
-						const points = curve.getPoints( 50 );
-						line.geometry.setFromPoints( points );
-						flow.updateCurve( 0, curve );
-
+				control = new TransformControls(camera, renderer.domElement);
+				control.addEventListener("dragging-changed", function (event) {
+					if (!event.value) {
+						const points = curve.getPoints(50);
+						line.geometry.setFromPoints(points);
+						flow.updateCurve(0, curve);
 					}
-
-				} );
+				});
 
 				stats = new Stats();
-				document.body.appendChild( stats.dom );
+				document.body.appendChild(stats.dom);
 
-				window.addEventListener( 'resize', onWindowResize );
-
+				window.addEventListener("resize", onWindowResize);
 			}
 
 			function onWindowResize() {
-
 				camera.aspect = window.innerWidth / window.innerHeight;
 				camera.updateProjectionMatrix();
 
-				renderer.setSize( window.innerWidth, window.innerHeight );
-
+				renderer.setSize(window.innerWidth, window.innerHeight);
 			}
 
-			function onPointerDown( event ) {
-
+			function onPointerDown(event) {
 				action = ACTION_SELECT;
-				mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
-				mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
-
+				mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+				mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 			}
 
+			const Y = new THREE.Vector3(0, 1, 0);
+			const X = new THREE.Vector3(1, 0, 0);
+
+			const dir = new THREE.Vector3(0, 0, 1);
+
+			window.addEventListener("keydown", (e) => {
+				console.log(e.key, e.code);
+				const step = dir
+					.clone()
+					.applyQuaternion(camera.quaternion)
+					.normalize()
+					.multiplyScalar(0.1);
+				switch (e.key) {
+					case "w":
+						camera.position.sub(step);
+						break;
+
+					case "s":
+						camera.position.add(step);
+						break;
+
+					case "a":
+						camera.rotateOnWorldAxis(Y, 0.1);
+						break;
+
+					case "d":
+						camera.rotateOnWorldAxis(Y, -0.1);
+						break;
+
+					case "q":
+						camera.rotateOnWorldAxis(X, -0.1);
+						break;
+
+					case "e":
+						camera.rotateOnWorldAxis(X, 0.1);
+						break;
+				}
+				// camera.lookAt(0,0,0)
+				needRender = true;
+			});
 			function animate() {
+				requestAnimationFrame(animate);
 
-				requestAnimationFrame( animate );
-
-				if ( action === ACTION_SELECT ) {
-
-					rayCaster.setFromCamera( mouse, camera );
+				if (action === ACTION_SELECT) {
+					rayCaster.setFromCamera(mouse, camera);
 					action = ACTION_NONE;
-					const intersects = rayCaster.intersectObjects( curveHandles, false );
-					if ( intersects.length ) {
-
-						const target = intersects[ 0 ].object;
-						control.attach( target );
-						scene.add( control );
-
+					const intersects = rayCaster.intersectObjects(curveHandles, false);
+					if (intersects.length) {
+						const target = intersects[0].object;
+						control.attach(target);
+						scene.add(control);
+						controls.enabled = false;
+					} else {
+						controls.enabled = true;
 					}
-
 				}
 
-				if ( flow ) {
-
-					flow.moveAlongCurve( 0.001 );
-
+				if (flow) {
+					flow.moveAlongCurve(-0.001);
 				}
 
 				render();
-
 			}
 
 			function render() {
-
-				renderer.render( scene, camera );
+				renderer.render(scene, camera);
 
 				stats.update();
-
 			}
 		</script>
 	</body>

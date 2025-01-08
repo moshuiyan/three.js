@@ -67,8 +67,8 @@
 				// Water
 
 				const waterGeometry = new THREE.PlaneGeometry( 200, 200 );
-				waterGeometry.rotateX(-Math.PI/2) // 这个必须改 似乎是里面用到了视图矩阵无关的东西
-				waterGeometry.translate(0,-50,0)
+				// waterGeometry.rotateX(-Math.PI/2) // 这个必须改 似乎是里面用到了视图矩阵无关的东西
+				// waterGeometry.translate(0,-50,0)
 
 				water = new Water(
 					waterGeometry,
@@ -88,7 +88,7 @@
 					}
 				);
 
-				water.rotation.x = - Math.PI / 2;
+				// water.rotation.x = - Math.PI / 2;
 
 				scene.add( water );
 
