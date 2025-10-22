@@ -174,7 +174,8 @@ class WboitPass extends Pass {
 				type: targetTypes[ i ],
 				format: RGBAFormat,
 				stencilBuffer: false,
-				depthBuffer: true,
+				depthBuffer: true,	
+				// samples:4		
 			} );
 
 			testPass.render( renderer, testTarget );
@@ -223,6 +224,7 @@ class WboitPass extends Pass {
 			format: RGBAFormat,
 			stencilBuffer: false,
 			depthBuffer: true,
+			samples: 4,
 		} );
 
 		this.accumulationTarget = new WebGLRenderTarget( effectiveWidth, effectiveHeight, {
@@ -232,6 +234,7 @@ class WboitPass extends Pass {
 			format: RGBAFormat,
 			stencilBuffer: false,
 			depthBuffer: false,
+			samples: 4,
 		} );
 
 	}
