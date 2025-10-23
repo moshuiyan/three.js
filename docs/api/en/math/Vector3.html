@@ -373,6 +373,15 @@
 			vector onto [page:Vector3 v].
 		</p>
 
+		<h3>[method:this random]()</h3>
+		<p>
+			Sets each component of this vector to a pseudo-random value between `0` and
+			`1`, excluding `1`.
+		</p>
+
+		<h3>[method:this randomDirection]()</h3>
+		<p>Sets this vector to a uniformly random point on a unit sphere.</p>
+		
 		<h3>[method:this reflect]( [param:Vector3 normal] )</h3>
 		<p>
 			[page:Vector3 normal] - the normal to the reflecting plane<br /><br />
@@ -485,7 +494,7 @@
 		<h3>[method:this setScalar]( [param:Float scalar] )</h3>
 		<p>
 			Set the [page:.x x], [page:.y y] and [page:.z z] values of this vector
-			both equal to [page:Float scalar].
+			all equal to [page:Float scalar].
 		</p>
 
 		<h3>[method:this setX]( [param:Float x] )</h3>
@@ -535,15 +544,6 @@
 			Projects this vector from the camera's normalized device coordinate (NDC)
 			space into world space.
 		</p>
-
-		<h3>[method:this random]()</h3>
-		<p>
-			Sets each component of this vector to a pseudo-random value between `0` and
-			`1`, excluding `1`.
-		</p>
-
-		<h3>[method:this randomDirection]()</h3>
-		<p>Sets this vector to a uniformly random point on a unit sphere.</p>
 
 		<h2>Source</h2>
 

@@ -1,5 +1,6 @@
 import UniformBuffer from './UniformBuffer.js';
 import { GPU_CHUNK_BYTES } from './Constants.js';
+import { error } from '../../utils.js';
 
 /**
  * This class represents a uniform buffer binding but with
@@ -13,7 +14,7 @@ class UniformsGroup extends UniformBuffer {
 	/**
 	 * Constructs a new uniforms group.
 	 *
-	 * @param {String} name - The group's name.
+	 * @param {string} name - The group's name.
 	 */
 	constructor( name ) {
 
@@ -22,7 +23,7 @@ class UniformsGroup extends UniformBuffer {
 		/**
 		 * This flag can be used for type testing.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @readonly
 		 * @default true
 		 */
@@ -32,7 +33,7 @@ class UniformsGroup extends UniformBuffer {
 		 * An array with the raw uniform values.
 		 *
 		 * @private
-		 * @type {Array<Number>?}
+		 * @type {?Array<number>}
 		 * @default null
 		 */
 		this._values = null;
@@ -85,7 +86,7 @@ class UniformsGroup extends UniformBuffer {
 	/**
 	 * An array with the raw uniform values.
 	 *
-	 * @type {Array<Number>}
+	 * @type {Array<number>}
 	 */
 	get values() {
 
@@ -125,9 +126,11 @@ class UniformsGroup extends UniformBuffer {
 	/**
 	 * The byte length of the buffer with correct buffer alignment.
 	 *
-	 * @type {Number}
+	 * @type {number}
 	 */
 	get byteLength() {
+
+		const bytesPerElement = this.bytesPerElement;
 
 		let offset = 0; // global buffer offset in bytes
 
@@ -135,32 +138,26 @@ class UniformsGroup extends UniformBuffer {
 
 			const uniform = this.uniforms[ i ];
 
-			const { boundary, itemSize } = uniform;
+			const boundary = uniform.boundary;
+			const itemSize = uniform.itemSize * bytesPerElement; // size of the uniform in bytes
 
-			// offset within a single chunk in bytes
+			const chunkOffset = offset % GPU_CHUNK_BYTES; // offset in the current chunk
+			const chunkPadding = chunkOffset % boundary; // required padding to match boundary
+			const chunkStart = chunkOffset + chunkPadding; // start position in the current chunk for the data
 
-			const chunkOffset = offset % GPU_CHUNK_BYTES;
-			const remainingSizeInChunk = GPU_CHUNK_BYTES - chunkOffset;
+			offset += chunkPadding;
 
-			// conformance tests
+			// Check for chunk overflow
+			if ( chunkStart !== 0 && ( GPU_CHUNK_BYTES - chunkStart ) < itemSize ) {
 
-			if ( chunkOffset !== 0 && ( remainingSizeInChunk - boundary ) < 0 ) {
-
-				// check for chunk overflow
-
-				offset += ( GPU_CHUNK_BYTES - chunkOffset );
-
-			} else if ( chunkOffset % boundary !== 0 ) {
-
-				// check for correct alignment
-
-				offset += ( chunkOffset % boundary );
+				// Add padding to the end of the chunk
+				offset += ( GPU_CHUNK_BYTES - chunkStart );
 
 			}
 
-			uniform.offset = ( offset / this.bytesPerElement );
+			uniform.offset = offset / bytesPerElement;
 
-			offset += ( itemSize * this.bytesPerElement );
+			offset += itemSize;
 
 		}
 
@@ -174,7 +171,7 @@ class UniformsGroup extends UniformBuffer {
 	 * values has actually changed so this method only returns
 	 * `true` if there is a real value change.
 	 *
-	 * @return {Boolean} Whether the uniforms have been updated and
+	 * @return {boolean} Whether the uniforms have been updated and
 	 * must be uploaded to the GPU.
 	 */
 	update() {
@@ -200,7 +197,7 @@ class UniformsGroup extends UniformBuffer {
 	 * the uniforms type.
 	 *
 	 * @param {Uniform} uniform - The uniform to update.
-	 * @return {Boolean} Whether the uniform has been updated or not.
+	 * @return {boolean} Whether the uniform has been updated or not.
 	 */
 	updateByType( uniform ) {
 
@@ -212,7 +209,7 @@ class UniformsGroup extends UniformBuffer {
 		if ( uniform.isMatrix3Uniform ) return this.updateMatrix3( uniform );
 		if ( uniform.isMatrix4Uniform ) return this.updateMatrix4( uniform );
 
-		console.error( 'THREE.WebGPUUniformsGroup: Unsupported uniform type.', uniform );
+		error( 'WebGPUUniformsGroup: Unsupported uniform type.', uniform );
 
 	}
 
@@ -220,7 +217,7 @@ class UniformsGroup extends UniformBuffer {
 	 * Updates a given Number uniform.
 	 *
 	 * @param {NumberUniform} uniform - The Number uniform.
-	 * @return {Boolean} Whether the uniform has been updated or not.
+	 * @return {boolean} Whether the uniform has been updated or not.
 	 */
 	updateNumber( uniform ) {
 
@@ -248,7 +245,7 @@ class UniformsGroup extends UniformBuffer {
 	 * Updates a given Vector2 uniform.
 	 *
 	 * @param {Vector2Uniform} uniform - The Vector2 uniform.
-	 * @return {Boolean} Whether the uniform has been updated or not.
+	 * @return {boolean} Whether the uniform has been updated or not.
 	 */
 	updateVector2( uniform ) {
 
@@ -278,7 +275,7 @@ class UniformsGroup extends UniformBuffer {
 	 * Updates a given Vector3 uniform.
 	 *
 	 * @param {Vector3Uniform} uniform - The Vector3 uniform.
-	 * @return {Boolean} Whether the uniform has been updated or not.
+	 * @return {boolean} Whether the uniform has been updated or not.
 	 */
 	updateVector3( uniform ) {
 
@@ -309,7 +306,7 @@ class UniformsGroup extends UniformBuffer {
 	 * Updates a given Vector4 uniform.
 	 *
 	 * @param {Vector4Uniform} uniform - The Vector4 uniform.
-	 * @return {Boolean} Whether the uniform has been updated or not.
+	 * @return {boolean} Whether the uniform has been updated or not.
 	 */
 	updateVector4( uniform ) {
 
@@ -341,7 +338,7 @@ class UniformsGroup extends UniformBuffer {
 	 * Updates a given Color uniform.
 	 *
 	 * @param {ColorUniform} uniform - The Color uniform.
-	 * @return {Boolean} Whether the uniform has been updated or not.
+	 * @return {boolean} Whether the uniform has been updated or not.
 	 */
 	updateColor( uniform ) {
 
@@ -371,7 +368,7 @@ class UniformsGroup extends UniformBuffer {
 	 * Updates a given Matrix3 uniform.
 	 *
 	 * @param {Matrix3Uniform} uniform - The Matrix3 uniform.
-	 * @return {Boolean} Whether the uniform has been updated or not.
+	 * @return {boolean} Whether the uniform has been updated or not.
 	 */
 	updateMatrix3( uniform ) {
 
@@ -409,7 +406,7 @@ class UniformsGroup extends UniformBuffer {
 	 * Updates a given Matrix4 uniform.
 	 *
 	 * @param {Matrix4Uniform} uniform - The Matrix4 uniform.
-	 * @return {Boolean} Whether the uniform has been updated or not.
+	 * @return {boolean} Whether the uniform has been updated or not.
 	 */
 	updateMatrix4( uniform ) {
 
@@ -435,7 +432,7 @@ class UniformsGroup extends UniformBuffer {
 	/**
 	 * Returns a typed array that matches the given data type.
 	 *
-	 * @param {String} type - The data type.
+	 * @param {string} type - The data type.
 	 * @return {TypedArray} The typed array.
 	 */
 	_getBufferForType( type ) {
@@ -454,7 +451,7 @@ class UniformsGroup extends UniformBuffer {
  * @private
  * @param {TypedArray} a - The first array.
  * @param {TypedArray} b - The second array.
- * @param {Number} offset - An index offset for the first array.
+ * @param {number} offset - An index offset for the first array.
  */
 function setArray( a, b, offset ) {
 
@@ -472,8 +469,8 @@ function setArray( a, b, offset ) {
  * @private
  * @param {TypedArray} a - The first array.
  * @param {TypedArray} b - The second array.
- * @param {Number} offset - An index offset for the first array.
- * @return {Boolean} Whether the given arrays are equal or not.
+ * @param {number} offset - An index offset for the first array.
+ * @return {boolean} Whether the given arrays are equal or not.
  */
 function arraysEqual( a, b, offset ) {
 

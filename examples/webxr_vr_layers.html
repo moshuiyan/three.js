@@ -10,7 +10,6 @@
 
 		<div id="info">
 			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> media and projection layers<br/>
-			(Oculus Browser 16.1+)
 
 			<p> This example demonstrates the use of <a href="https://www.w3.org/TR/webxrlayers-1/">WebXR Layers</a> to render high quality text and video.
 				  For static content such as text, using layers increases the usable resolution of the content by avoiding the extra resampling pass that occurs during normal VR rendering.
@@ -305,9 +304,12 @@
 				const gl = renderer.getContext();
 
 				// Init layers once in immersive mode and video is ready.
-				const useLayers = session.enabledFeatures !== undefined && session.enabledFeatures.includes('layers');
+				const useLayers = session &&
+					session.enabledFeatures !== undefined &&
+					session.enabledFeatures.includes( 'layers' ) &&
+					XRMediaBinding !== undefined;
 
-				if ( session && ! useLayers ) {
+				if ( ! useLayers ) {
 
 					errorMesh.visible = true;
 

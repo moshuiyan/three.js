@@ -1,8 +1,7 @@
 import Node from '../core/Node.js';
 import { NodeUpdateType } from '../core/constants.js';
 import { addMethodChaining, nodeObject } from '../tsl/TSLCore.js';
-
-/** @module ComputeNode **/
+import { warn, error } from '../../utils.js';
 
 /**
  * TODO
@@ -21,17 +20,16 @@ class ComputeNode extends Node {
 	 * Constructs a new compute node.
 	 *
 	 * @param {Node} computeNode - TODO
-	 * @param {Number} count - TODO.
-	 * @param {Array<Number>} [workgroupSize=[64]] - TODO.
+	 * @param {Array<number>} workgroupSize - TODO.
 	 */
-	constructor( computeNode, count, workgroupSize = [ 64 ] ) {
+	constructor( computeNode, workgroupSize ) {
 
 		super( 'void' );
 
 		/**
 		 * This flag can be used for type testing.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @readonly
 		 * @default true
 		 */
@@ -44,39 +42,33 @@ class ComputeNode extends Node {
 		 */
 		this.computeNode = computeNode;
 
-		/**
-		 * TODO
-		 *
-		 * @type {Number}
-		 */
-		this.count = count;
 
 		/**
 		 * TODO
 		 *
-		 * @type {Array<Number>}
-		 * @default [64]
+		 * @type {Array<number>}
+		 * @default [ 64 ]
 		 */
 		this.workgroupSize = workgroupSize;
 
 		/**
 		 * TODO
 		 *
-		 * @type {Number}
+		 * @type {number|Array<number>}
 		 */
-		this.dispatchCount = 0;
+		this.count = null;
 
 		/**
 		 * TODO
 		 *
-		 * @type {Number}
+		 * @type {number}
 		 */
 		this.version = 1;
 
 		/**
 		 * The name or label of the uniform.
 		 *
-		 * @type {String}
+		 * @type {string}
 		 * @default ''
 		 */
 		this.name = '';
@@ -85,7 +77,7 @@ class ComputeNode extends Node {
 		 * The `updateBeforeType` is set to `NodeUpdateType.OBJECT` since {@link ComputeNode#updateBefore}
 		 * is executed once per object by default.
 		 *
-		 * @type {String}
+		 * @type {string}
 		 * @default 'object'
 		 */
 		this.updateBeforeType = NodeUpdateType.OBJECT;
@@ -93,11 +85,34 @@ class ComputeNode extends Node {
 		/**
 		 * TODO
 		 *
-		 * @type {Function}
+		 * @type {?Function}
 		 */
 		this.onInitFunction = null;
 
-		this.updateDispatchCount();
+	}
+
+	/**
+	 * TODO
+	 *
+	 * @param {number|Array<number>} count - Array with [ x, y, z ] values for dispatch or a single number for the count
+	 * @return {ComputeNode}
+	 */
+	setCount( count ) {
+
+		this.count = count;
+
+		return this;
+
+	}
+
+	/**
+	 * TODO
+	 *
+	 * @return {number|Array<number>}
+	 */
+	getCount() {
+
+		return this.count;
 
 	}
 
@@ -113,10 +128,10 @@ class ComputeNode extends Node {
 	/**
 	 * Sets the {@link ComputeNode#name} property.
 	 *
-	 * @param {String} name - The name of the uniform.
+	 * @param {string} name - The name of the uniform.
 	 * @return {ComputeNode} A reference to this node.
 	 */
-	label( name ) {
+	setName( name ) {
 
 		this.name = name;
 
@@ -125,18 +140,17 @@ class ComputeNode extends Node {
 	}
 
 	/**
-	 * TODO
+	 * Sets the {@link ComputeNode#name} property.
+	 *
+	 * @deprecated
+	 * @param {string} name - The name of the uniform.
+	 * @return {ComputeNode} A reference to this node.
 	 */
-	updateDispatchCount() {
+	label( name ) {
 
-		const { count, workgroupSize } = this;
+		warn( 'TSL: "label()" has been deprecated. Use "setName()" instead.' ); // @deprecated r179
 
-		let size = workgroupSize[ 0 ];
-
-		for ( let i = 1; i < workgroupSize.length; i ++ )
-			size *= workgroupSize[ i ];
-
-		this.dispatchCount = Math.ceil( count / size );
+		return this.setName( name );
 
 	}
 
@@ -165,7 +179,24 @@ class ComputeNode extends Node {
 
 	}
 
-	generate( builder ) {
+	setup( builder ) {
+
+		const result = this.computeNode.build( builder );
+
+		if ( result ) {
+
+			const properties = builder.getNodeProperties( this );
+			properties.outputComputeNode = result.outputNode;
+
+			result.outputNode = null;
+
+		}
+
+		return result;
+
+	}
+
+	generate( builder, output ) {
 
 		const { shaderStage } = builder;
 
@@ -179,6 +210,17 @@ class ComputeNode extends Node {
 
 			}
 
+		} else {
+
+			const properties = builder.getNodeProperties( this );
+			const outputComputeNode = properties.outputComputeNode;
+
+			if ( outputComputeNode ) {
+
+				return outputComputeNode.build( builder, output );
+
+			}
+
 		}
 
 	}
@@ -188,14 +230,55 @@ class ComputeNode extends Node {
 export default ComputeNode;
 
 /**
- * TSL function for creating a compute node.
+ * TSL function for creating a compute kernel node.
  *
+ * @tsl
  * @function
  * @param {Node} node - TODO
- * @param {Number} count - TODO.
- * @param {Array<Number>} [workgroupSize=[64]] - TODO.
+ * @param {Array<number>} [workgroupSize=[64]] - TODO.
  * @returns {AtomicFunctionNode}
  */
-export const compute = ( node, count, workgroupSize ) => nodeObject( new ComputeNode( nodeObject( node ), count, workgroupSize ) );
+export const computeKernel = ( node, workgroupSize = [ 64 ] ) => {
+
+	if ( workgroupSize.length === 0 || workgroupSize.length > 3 ) {
+
+		error( 'TSL: compute() workgroupSize must have 1, 2, or 3 elements' );
+
+	}
+
+	for ( let i = 0; i < workgroupSize.length; i ++ ) {
+
+		const val = workgroupSize[ i ];
+
+		if ( typeof val !== 'number' || val <= 0 || ! Number.isInteger( val ) ) {
+
+			error( `TSL: compute() workgroupSize element at index [ ${ i } ] must be a positive integer` );
+
+		}
+
+	}
+
+	// Implicit fill-up to [ x, y, z ] with 1s, just like WGSL treats @workgroup_size when fewer dimensions are specified
+
+	while ( workgroupSize.length < 3 ) workgroupSize.push( 1 );
+
+	//
+
+	return nodeObject( new ComputeNode( nodeObject( node ), workgroupSize ) );
+
+};
+
+/**
+ * TSL function for creating a compute node.
+ *
+ * @tsl
+ * @function
+ * @param {Node} node - TODO
+ * @param {number|Array<number>} count - TODO.
+ * @param {Array<number>} [workgroupSize=[64]] - TODO.
+ * @returns {AtomicFunctionNode}
+ */
+export const compute = ( node, count, workgroupSize ) => computeKernel( node, workgroupSize ).setCount( count );
 
 addMethodChaining( 'compute', compute );
+addMethodChaining( 'computeKernel', computeKernel );

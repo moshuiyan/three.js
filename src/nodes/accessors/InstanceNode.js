@@ -12,8 +12,6 @@ import { InstancedInterleavedBuffer } from '../../core/InstancedInterleavedBuffe
 import { InstancedBufferAttribute } from '../../core/InstancedBufferAttribute.js';
 import { DynamicDrawUsage } from '../../constants.js';
 
-/** @module InstanceNode **/
-
 /**
  * This node implements the vertex shader logic which is required
  * when rendering 3D objects via instancing. The code makes sure
@@ -33,18 +31,18 @@ class InstanceNode extends Node {
 	/**
 	 * Constructs a new instance node.
 	 *
-	 * @param {Number} count - The number of instances.
+	 * @param {number} count - The number of instances.
 	 * @param {InstancedBufferAttribute} instanceMatrix - Instanced buffer attribute representing the instance transformations.
-	 * @param {InstancedBufferAttribute} instanceColor - Instanced buffer attribute representing the instance colors.
+	 * @param {?InstancedBufferAttribute} instanceColor - Instanced buffer attribute representing the instance colors.
 	 */
-	constructor( count, instanceMatrix, instanceColor ) {
+	constructor( count, instanceMatrix, instanceColor = null ) {
 
 		super( 'void' );
 
 		/**
 		 * The number of instances.
 		 *
-		 * @type {Number}
+		 * @type {number}
 		 */
 		this.count = count;
 
@@ -65,14 +63,15 @@ class InstanceNode extends Node {
 		/**
 		 * The node that represents the instance matrix data.
 		 *
-		 * @type {Node}
+		 * @type {?Node}
 		 */
 		this.instanceMatrixNode = null;
 
 		/**
 		 * The node that represents the instance color data.
 		 *
-		 * @type {Node}
+		 * @type {?Node}
+		 * @default null
 		 */
 		this.instanceColorNode = null;
 
@@ -80,7 +79,7 @@ class InstanceNode extends Node {
 		 * The update type is set to `frame` since an update
 		 * of instanced buffer data must be checked per frame.
 		 *
-		 * @type {String}
+		 * @type {string}
 		 * @default 'frame'
 		 */
 		this.updateType = NodeUpdateType.FRAME;
@@ -88,14 +87,14 @@ class InstanceNode extends Node {
 		/**
 		 * A reference to a buffer that is used by `instanceMatrixNode`.
 		 *
-		 * @type {InstancedInterleavedBuffer}
+		 * @type {?InstancedInterleavedBuffer}
 		 */
 		this.buffer = null;
 
 		/**
 		 * A reference to a buffer that is used by `instanceColorNode`.
 		 *
-		 * @type {InstancedInterleavedBuffer}
+		 * @type {?InstancedBufferAttribute}
 		 */
 		this.bufferColor = null;
 
@@ -110,7 +109,9 @@ class InstanceNode extends Node {
 	 */
 	setup( builder ) {
 
-		const { count, instanceMatrix, instanceColor } = this;
+		const { instanceMatrix, instanceColor } = this;
+
+		const { count } = instanceMatrix;
 
 		let { instanceMatrixNode, instanceColorNode } = this;
 
@@ -194,15 +195,33 @@ class InstanceNode extends Node {
 	 */
 	update( /*frame*/ ) {
 
-		if ( this.instanceMatrix.usage !== DynamicDrawUsage && this.buffer !== null && this.instanceMatrix.version !== this.buffer.version ) {
+		if ( this.buffer !== null ) {
 
-			this.buffer.version = this.instanceMatrix.version;
+			// keep update ranges in sync
+
+			this.buffer.clearUpdateRanges();
+			this.buffer.updateRanges.push( ... this.instanceMatrix.updateRanges );
+
+			// update version if necessary
+
+			if ( this.instanceMatrix.usage !== DynamicDrawUsage && this.instanceMatrix.version !== this.buffer.version ) {
+
+				this.buffer.version = this.instanceMatrix.version;
+
+			}
 
 		}
 
-		if ( this.instanceColor && this.instanceColor.usage !== DynamicDrawUsage && this.bufferColor !== null && this.instanceColor.version !== this.bufferColor.version ) {
+		if ( this.instanceColor && this.bufferColor !== null ) {
 
-			this.bufferColor.version = this.instanceColor.version;
+			this.bufferColor.clearUpdateRanges();
+			this.bufferColor.updateRanges.push( ... this.instanceColor.updateRanges );
+
+			if ( this.instanceColor.usage !== DynamicDrawUsage && this.instanceColor.version !== this.bufferColor.version ) {
+
+				this.bufferColor.version = this.instanceColor.version;
+
+			}
 
 		}
 
@@ -215,10 +234,11 @@ export default InstanceNode;
 /**
  * TSL function for creating an instance node.
  *
+ * @tsl
  * @function
- * @param {Number} count - The number of instances.
+ * @param {number} count - The number of instances.
  * @param {InstancedBufferAttribute} instanceMatrix - Instanced buffer attribute representing the instance transformations.
- * @param {InstancedBufferAttribute} instanceColor - Instanced buffer attribute representing the instance colors.
+ * @param {?InstancedBufferAttribute} instanceColor - Instanced buffer attribute representing the instance colors.
  * @returns {InstanceNode}
  */
-export const instance = /*@__PURE__*/ nodeProxy( InstanceNode );
+export const instance = /*@__PURE__*/ nodeProxy( InstanceNode ).setParameterLength( 2, 3 );

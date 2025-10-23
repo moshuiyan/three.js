@@ -109,6 +109,7 @@
 		<h3>[property:Float displacementBias]</h3>
 		<p>
 			The offset of the displacement map's values on the mesh's vertices.
+			The bias is added to the scaled sample of the displacement map.
 			Without a displacement map set, this value is not applied. Default is `0`.
 		</p>
 
@@ -124,7 +125,7 @@
 		<h3>[property:Texture map]</h3>
 		<p>
 			The color map. May optionally include an alpha channel, typically combined
-			with [page:Material.transparent .transparent] or [page:Material.alphaTest .alphaTest]. 
+			with [page:Material.transparent .transparent] or [page:Material.alphaTest .alphaTest].
 			Default is null. The texture map color is modulated by the
 			diffuse [page:.color].
 		</p>
@@ -154,6 +155,22 @@
 		<p>
 			How much the normal map affects the material. Typical ranges are 0-1.
 			Default is a [page:Vector2] set to (1,1).
+		</p>
+
+		<h3>[property:Boolean wireframe]</h3>
+		<p>
+			Render geometry as wireframe. Default is false (i.e. render as smooth
+			shaded).
+		</p>
+
+		<h3>[property:Float wireframeLinewidth]</h3>
+		<p>
+			Controls wireframe thickness. Default is `1`.<br /><br />
+
+			Due to limitations of the
+			[link:https://www.khronos.org/registry/OpenGL/specs/gl/glspec46.core.pdf OpenGL Core Profile]
+			with the [page:WebGLRenderer WebGL] renderer on most
+			platforms linewidth will always be `1` regardless of the set value.
 		</p>
 
 		<h2>Methods</h2>
