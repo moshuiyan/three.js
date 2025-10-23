@@ -5,12 +5,13 @@ const TEXTURE_HEIGHT = 4;
 
 import {
 	DataTexture,
+	DataUtils,
 	RGBAFormat,
-	FloatType,
+	HalfFloatType,
 	RepeatWrapping,
 	Mesh,
 	InstancedMesh,
-	NearestFilter,
+	LinearFilter,
 	DynamicDrawUsage,
 	Matrix4,
 } from "three";
@@ -19,22 +20,23 @@ import {
  * Make a new DataTexture to store the descriptions of the curves.
  *
  * @param { number } numberOfCurves the number of curves needed to be described by this texture.
+ * @returns { DataTexture }
  */
-export function initSplineTexture(numberOfCurves = 1) {
-	const dataArray = new Float32Array(
-		TEXTURE_WIDTH * TEXTURE_HEIGHT * numberOfCurves * CHANNELS
-	);
+export function initSplineTexture( numberOfCurves = 1 ) {
+
+	const dataArray = new Uint16Array( TEXTURE_WIDTH * TEXTURE_HEIGHT * numberOfCurves * CHANNELS );
 	const dataTexture = new DataTexture(
 		dataArray,
 		TEXTURE_WIDTH,
 		TEXTURE_HEIGHT * numberOfCurves,
 		RGBAFormat,
-		FloatType
+		HalfFloatType
 	);
 
 	dataTexture.wrapS = RepeatWrapping;
 	dataTexture.wrapY = RepeatWrapping;
-	dataTexture.magFilter = NearestFilter;
+	dataTexture.magFilter = LinearFilter;
+	dataTexture.minFilter = LinearFilter;
 	dataTexture.needsUpdate = true;
 
 	return dataTexture;
@@ -103,16 +105,18 @@ function setTextureValue(texture, index, x, y, z, o) {
 	const image = texture.image;
 	const { data } = image;
 	const i = CHANNELS * TEXTURE_WIDTH * o; // Row Offset
-	data[index * CHANNELS + i + 0] = x;
-	data[index * CHANNELS + i + 1] = y;
-	data[index * CHANNELS + i + 2] = z;
-	data[index * CHANNELS + i + 3] = 1;
+	data[ index * CHANNELS + i + 0 ] = DataUtils.toHalfFloat( x );
+	data[ index * CHANNELS + i + 1 ] = DataUtils.toHalfFloat( y );
+	data[ index * CHANNELS + i + 2 ] = DataUtils.toHalfFloat( z );
+	data[ index * CHANNELS + i + 3 ] = DataUtils.toHalfFloat( 1 );
+
 }
 
 /**
  * Create a new set of uniforms for describing the curve modifier
  *
- * @param { DataTexture } Texture which holds the curve description
+ * @param { DataTexture } splineTexture which holds the curve description
+ * @returns { Object } The uniforms object to be used in the shader
  */
 export function getUniforms(splineTexture) {
 	const uniforms = {
@@ -156,11 +160,11 @@ export function modifyShader(material, uniforms, numberOfCurves = 1) {
 			// chunk import moved in front of modified shader below
 			.replace("#include <beginnormal_vertex>", "")
 
-			// vec3 transformedNormal declaration overriden below
-			.replace("#include <defaultnormal_vertex>", "")
+			// vec3 transformedNormal declaration overridden below
+			.replace( '#include <defaultnormal_vertex>', '' )
 
-			// vec3 transformed declaration overriden below
-			.replace("#include <begin_vertex>", "")
+			// vec3 transformed declaration overridden below
+			.replace( '#include <begin_vertex>', '' )
 
 			// shader override
 			.replace(
@@ -215,7 +219,7 @@ vec3 transformedNormal = normalMatrix * (basis * objectNormal);
 }
 
 /**
- * A helper class for making meshes bend aroudn curves
+ * A helper class for making meshes bend around curves
  */
 export class Flow {
 	/**
@@ -224,11 +228,17 @@ export class Flow {
 	 */
 	constructor(mesh, numberOfCurves = 1) {
 		const obj3D = mesh.clone();
-		const splineTexure = initSplineTexture(numberOfCurves);
-		const uniforms = getUniforms(splineTexure);
-		obj3D.traverse(function (child) {
-			if (child instanceof Mesh || child instanceof InstancedMesh) {
-				if (Array.isArray(child.material)) {
+		const splineTexture = initSplineTexture( numberOfCurves );
+		const uniforms = getUniforms( splineTexture );
+		obj3D.traverse( function ( child ) {
+
+			if (
+				child instanceof Mesh ||
+				child instanceof InstancedMesh
+			) {
+
+				if ( Array.isArray( child.material ) ) {
+
 					const materials = [];
 
 					for (const material of child.material) {
@@ -249,7 +259,7 @@ export class Flow {
 		this.curveLengthArray = new Array(numberOfCurves);
 
 		this.object3D = obj3D;
-		this.splineTexure = splineTexure;
+		this.splineTexture = splineTexture;
 		this.uniforms = uniforms;
 	}
 
@@ -258,9 +268,10 @@ export class Flow {
 			throw Error("Index out of range for Flow");
 		const curveLength = curve.getLength();
 		this.uniforms.spineLength.value = curveLength;
-		this.curveLengthArray[index] = curveLength;
-		this.curveArray[index] = curve;
-		updateSplineTexture(this.splineTexure, curve, index);
+		this.curveLengthArray[ index ] = curveLength;
+		this.curveArray[ index ] = curve;
+		updateSplineTexture( this.splineTexture, curve, index );
+
 	}
 
 	moveAlongCurve(amount) {

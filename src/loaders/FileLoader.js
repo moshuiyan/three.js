@@ -77,6 +77,7 @@ class FileLoader extends Loader {
 		const req = new Request( url, {
 			headers: new Headers( this.requestHeader ),
 			credentials: this.withCredentials ? 'include' : 'same-origin',
+			signal: this.manager.abortController.signal //  Control the abort of fileLoader at the granularity of a manager
 			// An abort controller could be added within a future PR
 		} );
 
@@ -112,7 +113,7 @@ class FileLoader extends Loader {
 
 					// Nginx needs X-File-Size check
 					// https://serverfault.com/questions/482875/why-does-nginx-remove-content-length-header-for-chunked-content
-					const contentLength = response.headers.get( 'Content-Length' ) || response.headers.get( 'X-File-Size' );
+					const contentLength = response.headers.get( 'X-File-Size' ) || response.headers.get( 'Content-Length' );
 					const total = contentLength ? parseInt( contentLength ) : 0;
 					const lengthComputable = total !== 0;
 					let loaded = 0;
@@ -147,6 +148,10 @@ class FileLoader extends Loader {
 										readData();
 
 									}
+
+								}, ( e ) => {
+
+									controller.error( e );
 
 								} );
 

@@ -91,7 +91,6 @@
 				action = ACTION_NONE;
 
 			init();
-			animate();
 
 			function init() {
 				scene = new THREE.Scene();
@@ -196,7 +195,41 @@
 				document.body.appendChild(renderer.domElement);
 				controls = new OrbitControls(camera, renderer.domElement);
 
-				renderer.domElement.addEventListener("pointerdown", onPointerDown);
+					const geometry = new TextGeometry( 'Hello three.js!', {
+						font: font,
+						size: 0.2,
+						depth: 0.05,
+						curveSegments: 12,
+						bevelEnabled: true,
+						bevelThickness: 0.02,
+						bevelSize: 0.01,
+						bevelOffset: 0,
+						bevelSegments: 5,
+					} );
+
+					geometry.rotateX( Math.PI );
+
+					const material = new THREE.MeshStandardMaterial( {
+						color: 0x99ffff
+					} );
+
+					const objectToCurve = new THREE.Mesh( geometry, material );
+
+					flow = new Flow( objectToCurve );
+					flow.updateCurve( 0, curve );
+					scene.add( flow.object3D );
+
+				} 
+
+				//
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				renderer.domElement.addEventListener( 'pointerdown', onPointerDown );
 
 				rayCaster = new THREE.Raycaster();
 				control = new TransformControls(camera, renderer.domElement);
@@ -212,7 +245,7 @@
 				document.body.appendChild(stats.dom);
 
 				window.addEventListener("resize", onWindowResize);
-			}
+			
 
 			function onWindowResize() {
 				camera.aspect = window.innerWidth / window.innerHeight;
@@ -270,17 +303,17 @@
 			function animate() {
 				requestAnimationFrame(animate);
 
-				if (action === ACTION_SELECT) {
-					rayCaster.setFromCamera(mouse, camera);
+				if ( action === ACTION_SELECT ) {
+
+					rayCaster.setFromCamera( mouse, camera );
 					action = ACTION_NONE;
-					const intersects = rayCaster.intersectObjects(curveHandles, false);
-					if (intersects.length) {
-						const target = intersects[0].object;
-						control.attach(target);
-						scene.add(control);
-						controls.enabled = false;
-					} else {
-						controls.enabled = true;
+					const intersects = rayCaster.intersectObjects( curveHandles, false );
+					if ( intersects.length ) {
+
+						const target = intersects[ 0 ].object;
+						control.attach( target );
+						scene.add( control.getHelper() );
+
 					}
 				}
 
