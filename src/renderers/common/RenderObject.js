@@ -1,4 +1,4 @@
-import { hashString } from '../../nodes/core/NodeUtils.js';
+import { hash, hashString } from '../../nodes/core/NodeUtils.js';
 
 let _id = 0;
 
@@ -149,14 +149,14 @@ class RenderObject {
 		/**
 		 * The render object's version.
 		 *
-		 * @type {Number}
+		 * @type {number}
 		 */
 		this.version = material.version;
 
 		/**
 		 * The draw range of the geometry.
 		 *
-		 * @type {Object?}
+		 * @type {?Object}
 		 * @default null
 		 */
 		this.drawRange = null;
@@ -166,10 +166,20 @@ class RenderObject {
 		 * of the render object. This entails attribute
 		 * definitions on geometry and node level.
 		 *
-		 * @type {Array<BufferAttribute>?}
+		 * @type {?Array<BufferAttribute>}
 		 * @default null
 		 */
 		this.attributes = null;
+
+		/**
+		 * An object holding the version of the
+		 * attributes. The keys are the attribute names
+		 * and the values are the attribute versions.
+		 *
+		 * @type {?Object<string, number>}
+		 * @default null
+		 */
+		this.attributesId = null;
 
 		/**
 		 * A reference to a render pipeline the render
@@ -181,10 +191,20 @@ class RenderObject {
 		this.pipeline = null;
 
 		/**
+		 * Only relevant for objects using
+		 * multiple materials. This represents a group entry
+		 * from the respective `BufferGeometry`.
+		 *
+		 * @type {?{start: number, count: number}}
+		 * @default null
+		 */
+		this.group = null;
+
+		/**
 		 * An array holding the vertex buffers which can
 		 * be buffer attributes but also interleaved buffers.
 		 *
-		 * @type {Array<BufferAttribute|InterleavedBuffer>?}
+		 * @type {?Array<BufferAttribute|InterleavedBuffer>}
 		 * @default null
 		 */
 		this.vertexBuffers = null;
@@ -192,7 +212,7 @@ class RenderObject {
 		/**
 		 * The parameters for the draw command.
 		 *
-		 * @type {Object?}
+		 * @type {?Object}
 		 * @default null
 		 */
 		this.drawParams = null;
@@ -201,7 +221,7 @@ class RenderObject {
 		 * If this render object is used inside a render bundle,
 		 * this property points to the respective bundle group.
 		 *
-		 * @type {BundleGroup?}
+		 * @type {?BundleGroup}
 		 * @default null
 		 */
 		this.bundle = null;
@@ -216,28 +236,28 @@ class RenderObject {
 		/**
 		 * The clipping context's cache key.
 		 *
-		 * @type {String}
+		 * @type {string}
 		 */
 		this.clippingContextCacheKey = clippingContext !== null ? clippingContext.cacheKey : '';
 
 		/**
 		 * The initial node cache key.
 		 *
-		 * @type {Number}
+		 * @type {number}
 		 */
 		this.initialNodesCacheKey = this.getDynamicCacheKey();
 
 		/**
 		 * The initial cache key.
 		 *
-		 * @type {Number}
+		 * @type {number}
 		 */
 		this.initialCacheKey = this.getCacheKey();
 
 		/**
 		 * The node builder state.
 		 *
-		 * @type {NodeBuilderState?}
+		 * @type {?NodeBuilderState}
 		 * @private
 		 * @default null
 		 */
@@ -246,7 +266,7 @@ class RenderObject {
 		/**
 		 * An array of bindings.
 		 *
-		 * @type {Array<BindGroup>?}
+		 * @type {?Array<BindGroup>}
 		 * @private
 		 * @default null
 		 */
@@ -255,7 +275,7 @@ class RenderObject {
 		/**
 		 * Reference to the node material observer.
 		 *
-		 * @type {NodeMaterialObserver?}
+		 * @type {?NodeMaterialObserver}
 		 * @private
 		 * @default null
 		 */
@@ -272,7 +292,7 @@ class RenderObject {
 		/**
 		 * This flag can be used for type testing.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @readonly
 		 * @default true
 		 */
@@ -280,7 +300,7 @@ class RenderObject {
 
 		/**
 		 * An event listener which is executed when `dispose()` is called on
-		 * the render object's material.
+		 * the material of this render object.
 		 *
 		 * @method
 		 */
@@ -290,7 +310,23 @@ class RenderObject {
 
 		};
 
+		/**
+		 * An event listener which is executed when `dispose()` is called on
+		 * the geometry of this render object.
+		 *
+		 * @method
+		 */
+		this.onGeometryDispose = () => {
+
+			// clear geometry cache attributes
+
+			this.attributes = null;
+			this.attributesId = null;
+
+		};
+
 		this.material.addEventListener( 'dispose', this.onMaterialDispose );
+		this.geometry.addEventListener( 'dispose', this.onGeometryDispose );
 
 	}
 
@@ -308,7 +344,7 @@ class RenderObject {
 	/**
 	 * Whether the clipping requires an update or not.
 	 *
-	 * @type {Boolean}
+	 * @type {boolean}
 	 * @readonly
 	 */
 	get clippingNeedsUpdate() {
@@ -324,7 +360,7 @@ class RenderObject {
 	/**
 	 * The number of clipping planes defined in context of hardware clipping.
 	 *
-	 * @type {Number}
+	 * @type {number}
 	 * @readonly
 	 */
 	get hardwareClippingPlanes() {
@@ -351,7 +387,7 @@ class RenderObject {
 	 */
 	getMonitor() {
 
-		return this._monitor || ( this._monitor = this.getNodeBuilderState().monitor );
+		return this._monitor || ( this._monitor = this.getNodeBuilderState().observer );
 
 	}
 
@@ -367,9 +403,29 @@ class RenderObject {
 	}
 
 	/**
+	 * Returns a binding group by group name of this render object.
+	 *
+	 * @param {string} name - The name of the binding group.
+	 * @return {?BindGroup} The bindings.
+	 */
+	getBindingGroup( name ) {
+
+		for ( const bindingGroup of this.getBindings() ) {
+
+			if ( bindingGroup.name === name ) {
+
+				return bindingGroup;
+
+			}
+
+		}
+
+	}
+
+	/**
 	 * Returns the index of the render object's geometry.
 	 *
-	 * @return {BufferAttribute?} The index. Returns `null` for non-indexed geometries.
+	 * @return {?BufferAttribute} The index. Returns `null` for non-indexed geometries.
 	 */
 	getIndex() {
 
@@ -380,7 +436,7 @@ class RenderObject {
 	/**
 	 * Returns the indirect buffer attribute.
 	 *
-	 * @return {BufferAttribute?} The indirect attribute. `null` if no indirect drawing is used.
+	 * @return {?BufferAttribute} The indirect attribute. `null` if no indirect drawing is used.
 	 */
 	getIndirect() {
 
@@ -409,6 +465,7 @@ class RenderObject {
 
 		this.geometry = geometry;
 		this.attributes = null;
+		this.attributesId = null;
 
 	}
 
@@ -428,9 +485,25 @@ class RenderObject {
 		const attributes = [];
 		const vertexBuffers = new Set();
 
+		const attributesId = {};
+
 		for ( const nodeAttribute of nodeAttributes ) {
 
-			const attribute = nodeAttribute.node && nodeAttribute.node.attribute ? nodeAttribute.node.attribute : geometry.getAttribute( nodeAttribute.name );
+			let attribute;
+
+			if ( nodeAttribute.node && nodeAttribute.node.attribute ) {
+
+				// node attribute
+				attribute = nodeAttribute.node.attribute;
+
+			} else {
+
+				// geometry attribute
+				attribute = geometry.getAttribute( nodeAttribute.name );
+
+				attributesId[ nodeAttribute.name ] = attribute.version;
+
+			}
 
 			if ( attribute === undefined ) continue;
 
@@ -442,6 +515,7 @@ class RenderObject {
 		}
 
 		this.attributes = attributes;
+		this.attributesId = attributesId;
 		this.vertexBuffers = Array.from( vertexBuffers.values() );
 
 		return attributes;
@@ -464,7 +538,7 @@ class RenderObject {
 	/**
 	 * Returns the draw parameters for the render object.
 	 *
-	 * @return {{vertexCount: Number, firstVertex: Number, instanceCount: Number, firstInstance: Number}} The draw parameters.
+	 * @return {?{vertexCount: number, firstVertex: number, instanceCount: number, firstInstance: number}} The draw parameters.
 	 */
 	getDrawParameters() {
 
@@ -479,7 +553,18 @@ class RenderObject {
 
 		const index = this.getIndex();
 		const hasIndex = ( index !== null );
-		const instanceCount = geometry.isInstancedBufferGeometry ? geometry.instanceCount : ( object.count > 1 ? object.count : 1 );
+
+		let instanceCount = 1;
+
+		if ( geometry.isInstancedBufferGeometry === true ) {
+
+			instanceCount = geometry.instanceCount;
+
+		} else if ( object.count !== undefined ) {
+
+			instanceCount = Math.max( 0, object.count );
+
+		}
 
 		if ( instanceCount === 0 ) return null;
 
@@ -537,7 +622,7 @@ class RenderObject {
 	 *
 	 * The geometry cache key is part of the material cache key.
 	 *
-	 * @return {String} The geometry cache key.
+	 * @return {string} The geometry cache key.
 	 */
 	getGeometryCacheKey() {
 
@@ -558,6 +643,26 @@ class RenderObject {
 
 		}
 
+		// structural equality isn't sufficient for morph targets since the
+		// data are maintained in textures. only if the targets are all equal
+		// the texture and thus the instance of `MorphNode` can be shared.
+
+		for ( const name of Object.keys( geometry.morphAttributes ).sort() ) {
+
+			const targets = geometry.morphAttributes[ name ];
+
+			cacheKey += 'morph-' + name + ',';
+
+			for ( let i = 0, l = targets.length; i < l; i ++ ) {
+
+				const attribute = targets[ i ];
+
+				cacheKey += attribute.id + ',';
+
+			}
+
+		}
+
 		if ( geometry.index ) {
 
 			cacheKey += 'index,';
@@ -573,11 +678,11 @@ class RenderObject {
 	 *
 	 * The material cache key is part of the render object cache key.
 	 *
-	 * @return {String} The material cache key.
+	 * @return {number} The material cache key.
 	 */
 	getMaterialCacheKey() {
 
-		const { object, material } = this;
+		const { object, material, renderer } = this;
 
 		let cacheKey = material.customProgramCacheKey();
 
@@ -606,6 +711,18 @@ class RenderObject {
 					if ( value.isTexture ) {
 
 						valueKey += value.mapping;
+
+						// WebGPU must honor the sampler data because they are part of the bindings
+
+						if ( renderer.backend.isWebGPUBackend === true ) {
+
+							valueKey += value.magFilter;
+							valueKey += value.minFilter;
+							valueKey += value.wrapS;
+							valueKey += value.wrapT;
+							valueKey += value.wrapR;
+
+						}
 
 					}
 
@@ -641,12 +758,6 @@ class RenderObject {
 
 		}
 
-		if ( object.morphTargetInfluences ) {
-
-			cacheKey += object.morphTargetInfluences.length + ',';
-
-		}
-
 		if ( object.isBatchedMesh ) {
 
 			cacheKey += object._matricesTexture.uuid + ',';
@@ -659,7 +770,7 @@ class RenderObject {
 
 		}
 
-		if ( object.count > 1 ) {
+		if ( object.isInstancedMesh || object.count > 1 || Array.isArray( object.morphTargetInfluences ) ) {
 
 			// TODO: https://github.com/mrdoob/three.js/pull/29066#issuecomment-2269400850
 
@@ -676,12 +787,32 @@ class RenderObject {
 	/**
 	 * Whether the geometry requires an update or not.
 	 *
-	 * @type {Boolean}
+	 * @type {boolean}
 	 * @readonly
 	 */
 	get needsGeometryUpdate() {
 
-		return this.geometry.id !== this.object.geometry.id;
+		if ( this.geometry.id !== this.object.geometry.id ) return true;
+
+		if ( this.attributes !== null ) {
+
+			const attributesId = this.attributesId;
+
+			for ( const name in attributesId ) {
+
+				const attribute = this.geometry.getAttribute( name );
+
+				if ( attribute === undefined || attributesId[ name ] !== attribute.id ) {
+
+					return true;
+
+				}
+
+			}
+
+		}
+
+		return false;
 
 	}
 
@@ -699,7 +830,7 @@ class RenderObject {
 	 * TODO: Investigate if it's possible to merge both steps so there is only a single place
 	 * that performs the 'needsUpdate' check.
 	 *
-	 * @type {Boolean}
+	 * @type {boolean}
 	 * @readonly
 	 */
 	get needsUpdate() {
@@ -711,17 +842,30 @@ class RenderObject {
 	/**
 	 * Returns the dynamic cache key which represents a key that is computed per draw command.
 	 *
-	 * @return {String} The cache key.
+	 * @return {number} The cache key.
 	 */
 	getDynamicCacheKey() {
 
-		// Environment Nodes Cache Key
+		let cacheKey = 0;
 
-		let cacheKey = this._nodes.getCacheKey( this.scene, this.lightsNode );
+		// `Nodes.getCacheKey()` returns an environment cache key which is not relevant when
+		// the renderer is inside a shadow pass.
+
+		if ( this.material.isShadowPassMaterial !== true ) {
+
+			cacheKey = this._nodes.getCacheKey( this.scene, this.lightsNode );
+
+		}
+
+		if ( this.camera.isArrayCamera ) {
+
+			cacheKey = hash( cacheKey, this.camera.cameras.length );
+
+		}
 
 		if ( this.object.receiveShadow ) {
 
-			cacheKey += 1;
+			cacheKey = hash( cacheKey, 1 );
 
 		}
 
@@ -732,7 +876,7 @@ class RenderObject {
 	/**
 	 * Returns the render object's cache key.
 	 *
-	 * @return {String} The cache key.
+	 * @return {number} The cache key.
 	 */
 	getCacheKey() {
 
@@ -746,6 +890,7 @@ class RenderObject {
 	dispose() {
 
 		this.material.removeEventListener( 'dispose', this.onMaterialDispose );
+		this.geometry.removeEventListener( 'dispose', this.onGeometryDispose );
 
 		this.onDispose();
 

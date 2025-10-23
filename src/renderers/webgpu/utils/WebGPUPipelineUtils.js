@@ -5,7 +5,7 @@ import {
 } from './WebGPUConstants.js';
 
 import {
-	FrontSide, BackSide, DoubleSide,
+	BackSide, DoubleSide,
 	NeverDepth, AlwaysDepth, LessDepth, LessEqualDepth, EqualDepth, GreaterEqualDepth, GreaterDepth, NotEqualDepth,
 	NoBlending, NormalBlending, AdditiveBlending, SubtractiveBlending, MultiplyBlending, CustomBlending,
 	ZeroFactor, OneFactor, SrcColorFactor, OneMinusSrcColorFactor, SrcAlphaFactor, OneMinusSrcAlphaFactor, DstColorFactor,
@@ -14,6 +14,7 @@ import {
 	KeepStencilOp, ZeroStencilOp, ReplaceStencilOp, InvertStencilOp, IncrementStencilOp, DecrementStencilOp, IncrementWrapStencilOp, DecrementWrapStencilOp,
 	NeverStencilFunc, AlwaysStencilFunc, LessStencilFunc, LessEqualStencilFunc, EqualStencilFunc, GreaterEqualStencilFunc, GreaterStencilFunc, NotEqualStencilFunc
 } from '../../../constants.js';
+import { error } from '../../../utils.js';
 
 /**
  * A WebGPU backend utility module for managing pipelines.
@@ -36,6 +37,35 @@ class WebGPUPipelineUtils {
 		 */
 		this.backend = backend;
 
+		/**
+		 * A Weak Map that tracks the active pipeline for render or compute passes.
+		 *
+		 * @private
+		 * @type {WeakMap<(GPURenderPassEncoder|GPUComputePassEncoder),(GPURenderPipeline|GPUComputePipeline)>}
+		 */
+		this._activePipelines = new WeakMap();
+
+	}
+
+	/**
+	 * Sets the given pipeline for the given pass. The method makes sure to only set the
+	 * pipeline when necessary.
+	 *
+	 * @param {(GPURenderPassEncoder|GPUComputePassEncoder)} pass - The pass encoder.
+	 * @param {(GPURenderPipeline|GPUComputePipeline)} pipeline - The pipeline.
+	 */
+	setPipeline( pass, pipeline ) {
+
+		const currentPipeline = this._activePipelines.get( pass );
+
+		if ( currentPipeline !== pipeline ) {
+
+			pass.setPipeline( pipeline );
+
+			this._activePipelines.set( pass, pipeline );
+
+		}
+
 	}
 
 	/**
@@ -43,7 +73,7 @@ class WebGPUPipelineUtils {
 	 *
 	 * @private
 	 * @param {RenderContext} renderContext - The render context.
-	 * @return {Number} The sample count.
+	 * @return {number} The sample count.
 	 */
 	_getSampleCount( renderContext ) {
 
@@ -88,7 +118,7 @@ class WebGPUPipelineUtils {
 
 		let blending;
 
-		if ( material.transparent === true && material.blending !== NoBlending ) {
+		if ( material.blending !== NoBlending && ( material.blending !== NormalBlending || material.transparent !== false ) ) {
 
 			blending = this._getBlending( material );
 
@@ -188,6 +218,14 @@ class WebGPUPipelineUtils {
 
 			}
 
+			if ( material.polygonOffset === true ) {
+
+				depthStencil.depthBias = material.polygonOffsetUnits;
+				depthStencil.depthBiasSlopeScale = material.polygonOffsetFactor;
+				depthStencil.depthBiasClamp = 0; // three.js does not provide an API to configure this value
+
+			}
+
 			pipelineDescriptor.depthStencil = depthStencil;
 
 		}
@@ -220,20 +258,21 @@ class WebGPUPipelineUtils {
 	 * Creates GPU render bundle encoder for the given render context.
 	 *
 	 * @param {RenderContext} renderContext - The render context.
+	 * @param {?string} [label='renderBundleEncoder'] - The label.
 	 * @return {GPURenderBundleEncoder} The GPU render bundle encoder.
 	 */
-	createBundleEncoder( renderContext ) {
+	createBundleEncoder( renderContext, label = 'renderBundleEncoder' ) {
 
 		const backend = this.backend;
 		const { utils, device } = backend;
 
 		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderContext );
-		const colorFormat = utils.getCurrentColorFormat( renderContext );
+		const colorFormats = utils.getCurrentColorFormats( renderContext );
 		const sampleCount = this._getSampleCount( renderContext );
 
 		const descriptor = {
-			label: 'renderBundleEncoder',
-			colorFormats: [ colorFormat ],
+			label,
+			colorFormats,
 			depthStencilFormat,
 			sampleCount
 		};
@@ -351,7 +390,7 @@ class WebGPUPipelineUtils {
 						break;
 
 					case MultiplyBlending:
-						setBlend( GPUBlendFactor.Zero, GPUBlendFactor.Src, GPUBlendFactor.Zero, GPUBlendFactor.SrcAlpha );
+						setBlend( GPUBlendFactor.Dst, GPUBlendFactor.OneMinusSrcAlpha, GPUBlendFactor.Zero, GPUBlendFactor.One );
 						break;
 
 				}
@@ -365,15 +404,15 @@ class WebGPUPipelineUtils {
 						break;
 
 					case AdditiveBlending:
-						setBlend( GPUBlendFactor.SrcAlpha, GPUBlendFactor.One, GPUBlendFactor.SrcAlpha, GPUBlendFactor.One );
+						setBlend( GPUBlendFactor.SrcAlpha, GPUBlendFactor.One, GPUBlendFactor.One, GPUBlendFactor.One );
 						break;
 
 					case SubtractiveBlending:
-						setBlend( GPUBlendFactor.Zero, GPUBlendFactor.OneMinusSrc, GPUBlendFactor.Zero, GPUBlendFactor.One );
+						error( 'WebGPURenderer: SubtractiveBlending requires material.premultipliedAlpha = true' );
 						break;
 
 					case MultiplyBlending:
-						setBlend( GPUBlendFactor.Zero, GPUBlendFactor.Src, GPUBlendFactor.Zero, GPUBlendFactor.Src );
+						error( 'WebGPURenderer: MultiplyBlending requires material.premultipliedAlpha = true' );
 						break;
 
 				}
@@ -388,7 +427,7 @@ class WebGPUPipelineUtils {
 
 		} else {
 
-			console.error( 'THREE.WebGPURenderer: Invalid blending: ', blending );
+			error( 'WebGPURenderer: Invalid blending: ', blending );
 
 		}
 
@@ -397,8 +436,8 @@ class WebGPUPipelineUtils {
 	 * Returns the GPU blend factor which is required for the pipeline creation.
 	 *
 	 * @private
-	 * @param {Number} blend - The blend factor as a three.js constant.
-	 * @return {String} The GPU blend factor.
+	 * @param {number} blend - The blend factor as a three.js constant.
+	 * @return {string} The GPU blend factor.
 	 */
 	_getBlendFactor( blend ) {
 
@@ -435,7 +474,7 @@ class WebGPUPipelineUtils {
 				break;
 
 			case OneMinusDstColorFactor:
-				blendFactor = GPUBlendFactor.OneMinusDstColor;
+				blendFactor = GPUBlendFactor.OneMinusDst;
 				break;
 
 			case DstAlphaFactor:
@@ -459,7 +498,7 @@ class WebGPUPipelineUtils {
 				break;
 
 			default:
-				console.error( 'THREE.WebGPURenderer: Blend factor not supported.', blend );
+				error( 'WebGPURenderer: Blend factor not supported.', blend );
 
 		}
 
@@ -472,7 +511,7 @@ class WebGPUPipelineUtils {
 	 *
 	 * @private
 	 * @param {Material} material - The material.
-	 * @return {String} The GPU stencil compare function.
+	 * @return {string} The GPU stencil compare function.
 	 */
 	_getStencilCompare( material ) {
 
@@ -515,7 +554,7 @@ class WebGPUPipelineUtils {
 				break;
 
 			default:
-				console.error( 'THREE.WebGPURenderer: Invalid stencil function.', stencilFunc );
+				error( 'WebGPURenderer: Invalid stencil function.', stencilFunc );
 
 		}
 
@@ -527,8 +566,8 @@ class WebGPUPipelineUtils {
 	 * Returns the GPU stencil operation which is required for the pipeline creation.
 	 *
 	 * @private
-	 * @param {Number} op - A three.js constant defining the stencil operation.
-	 * @return {String} The GPU stencil operation.
+	 * @param {number} op - A three.js constant defining the stencil operation.
+	 * @return {string} The GPU stencil operation.
 	 */
 	_getStencilOperation( op ) {
 
@@ -569,7 +608,7 @@ class WebGPUPipelineUtils {
 				break;
 
 			default:
-				console.error( 'THREE.WebGPURenderer: Invalid stencil operation.', stencilOperation );
+				error( 'WebGPURenderer: Invalid stencil operation.', stencilOperation );
 
 		}
 
@@ -581,8 +620,8 @@ class WebGPUPipelineUtils {
 	 * Returns the GPU blend operation which is required for the pipeline creation.
 	 *
 	 * @private
-	 * @param {Number} blendEquation - A three.js constant defining the blend equation.
-	 * @return {String} The GPU blend operation.
+	 * @param {number} blendEquation - A three.js constant defining the blend equation.
+	 * @return {string} The GPU blend operation.
 	 */
 	_getBlendOperation( blendEquation ) {
 
@@ -611,7 +650,7 @@ class WebGPUPipelineUtils {
 				break;
 
 			default:
-				console.error( 'THREE.WebGPUPipelineUtils: Blend equation not supported.', blendEquation );
+				error( 'WebGPUPipelineUtils: Blend equation not supported.', blendEquation );
 
 		}
 
@@ -634,6 +673,8 @@ class WebGPUPipelineUtils {
 		const descriptor = {};
 		const utils = this.backend.utils;
 
+		//
+
 		descriptor.topology = utils.getPrimitiveTopology( object, material );
 
 		if ( geometry.index !== null && object.isLine === true && object.isLineSegments !== true ) {
@@ -642,28 +683,17 @@ class WebGPUPipelineUtils {
 
 		}
 
-		switch ( material.side ) {
+		//
 
-			case FrontSide:
-				descriptor.frontFace = GPUFrontFace.CCW;
-				descriptor.cullMode = GPUCullMode.Back;
-				break;
+		let flipSided = ( material.side === BackSide );
 
-			case BackSide:
-				descriptor.frontFace = GPUFrontFace.CCW;
-				descriptor.cullMode = GPUCullMode.Front;
-				break;
+		if ( object.isMesh && object.matrixWorld.determinant() < 0 ) flipSided = ! flipSided;
 
-			case DoubleSide:
-				descriptor.frontFace = GPUFrontFace.CCW;
-				descriptor.cullMode = GPUCullMode.None;
-				break;
+		descriptor.frontFace = ( flipSided === true ) ? GPUFrontFace.CW : GPUFrontFace.CCW;
 
-			default:
-				console.error( 'THREE.WebGPUPipelineUtils: Unknown material.side value.', material.side );
-				break;
+		//
 
-		}
+		descriptor.cullMode = ( material.side === DoubleSide ) ? GPUCullMode.None : GPUCullMode.Back;
 
 		return descriptor;
 
@@ -674,7 +704,7 @@ class WebGPUPipelineUtils {
 	 *
 	 * @private
 	 * @param {Material} material - The material.
-	 * @return {String} The GPU color write mask.
+	 * @return {number} The GPU color write mask.
 	 */
 	_getColorWriteMask( material ) {
 
@@ -687,7 +717,7 @@ class WebGPUPipelineUtils {
 	 *
 	 * @private
 	 * @param {Material} material - The material.
-	 * @return {String} The GPU depth compare function.
+	 * @return {string} The GPU depth compare function.
 	 */
 	_getDepthCompare( material ) {
 
@@ -736,7 +766,7 @@ class WebGPUPipelineUtils {
 					break;
 
 				default:
-					console.error( 'THREE.WebGPUPipelineUtils: Invalid depth function.', depthFunc );
+					error( 'WebGPUPipelineUtils: Invalid depth function.', depthFunc );
 
 			}
 

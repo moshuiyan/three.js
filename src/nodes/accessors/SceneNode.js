@@ -5,11 +5,10 @@ import Node from '../core/Node.js';
 import { renderGroup } from '../core/UniformGroupNode.js';
 import { nodeImmutable, uniform } from '../tsl/TSLBase.js';
 import { reference } from './ReferenceNode.js';
+import { error } from '../../utils.js';
 
 const _e1 = /*@__PURE__*/ new Euler();
 const _m1 = /*@__PURE__*/ new Matrix4();
-
-/** @module SceneNode **/
 
 /**
  * This module allows access to a collection of scene properties. The following predefined TSL objects
@@ -33,7 +32,7 @@ class SceneNode extends Node {
 	 * Constructs a new scene node.
 	 *
 	 * @param {('backgroundBlurriness'|'backgroundIntensity'|'backgroundRotation')} scope - The scope defines the type of scene property that is accessed.
-	 * @param {Scene?} [scene=null] - A reference to the scene.
+	 * @param {?Scene} [scene=null] - A reference to the scene.
 	 */
 	constructor( scope = SceneNode.BACKGROUND_BLURRINESS, scene = null ) {
 
@@ -49,7 +48,7 @@ class SceneNode extends Node {
 		/**
 		 * A reference to the scene that is going to be accessed.
 		 *
-		 * @type {Scene?}
+		 * @type {?Scene}
 		 * @default null
 		 */
 		this.scene = scene;
@@ -80,7 +79,7 @@ class SceneNode extends Node {
 
 		} else if ( scope === SceneNode.BACKGROUND_ROTATION ) {
 
-			output = uniform( 'mat4' ).label( 'backgroundRotation' ).setGroup( renderGroup ).onRenderUpdate( () => {
+			output = uniform( 'mat4' ).setName( 'backgroundRotation' ).setGroup( renderGroup ).onRenderUpdate( () => {
 
 				const background = scene.background;
 
@@ -105,7 +104,7 @@ class SceneNode extends Node {
 
 		} else {
 
-			console.error( 'THREE.SceneNode: Unknown scope:', scope );
+			error( 'SceneNode: Unknown scope:', scope );
 
 		}
 
@@ -124,6 +123,7 @@ export default SceneNode;
 /**
  * TSL object that represents the scene's background blurriness.
  *
+ * @tsl
  * @type {SceneNode}
  */
 export const backgroundBlurriness = /*@__PURE__*/ nodeImmutable( SceneNode, SceneNode.BACKGROUND_BLURRINESS );
@@ -131,6 +131,7 @@ export const backgroundBlurriness = /*@__PURE__*/ nodeImmutable( SceneNode, Scen
 /**
  * TSL object that represents the scene's background intensity.
  *
+ * @tsl
  * @type {SceneNode}
  */
 export const backgroundIntensity = /*@__PURE__*/ nodeImmutable( SceneNode, SceneNode.BACKGROUND_INTENSITY );
@@ -138,6 +139,7 @@ export const backgroundIntensity = /*@__PURE__*/ nodeImmutable( SceneNode, Scene
 /**
  * TSL object that represents the scene's background rotation.
  *
+ * @tsl
  * @type {SceneNode}
  */
 export const backgroundRotation = /*@__PURE__*/ nodeImmutable( SceneNode, SceneNode.BACKGROUND_ROTATION );

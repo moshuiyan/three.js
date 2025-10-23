@@ -4,8 +4,6 @@ import { addMethodChaining, nodeObject } from '../tsl/TSLCore.js';
 import { NoColorSpace, NoToneMapping } from '../../constants.js';
 import { ColorManagement } from '../../math/ColorManagement.js';
 
-/** @module RenderOutputNode **/
-
 /**
  * Normally, tone mapping and color conversion happens automatically
  * before outputting pixel too the default (screen) framebuffer. In certain
@@ -41,8 +39,8 @@ class RenderOutputNode extends TempNode {
 	 * Constructs a new render output node.
 	 *
 	 * @param {Node} colorNode - The color node to process.
-	 * @param {Number} toneMapping - The tone mapping type.
-	 * @param {String} outputColorSpace - The output color space.
+	 * @param {?number} toneMapping - The tone mapping type.
+	 * @param {?string} outputColorSpace - The output color space.
 	 */
 	constructor( colorNode, toneMapping, outputColorSpace ) {
 
@@ -58,25 +56,51 @@ class RenderOutputNode extends TempNode {
 		/**
 		 * The tone mapping type.
 		 *
-		 * @type {Number?}
+		 * @private
+		 * @type {?number}
 		 */
-		this.toneMapping = toneMapping;
+		this._toneMapping = toneMapping;
 
 		/**
 		 * The output color space.
 		 *
-		 * @type {String?}
+		 * @type {?string}
 		 */
 		this.outputColorSpace = outputColorSpace;
 
 		/**
 		 * This flag can be used for type testing.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @readonly
 		 * @default true
 		 */
 		this.isRenderOutputNode = true;
+
+	}
+
+	/**
+	 * Sets the tone mapping type.
+	 *
+	 * @param {number} value - The tone mapping type.
+	 * @return {ToneMappingNode} A reference to this node.
+	 */
+	setToneMapping( value ) {
+
+		this._toneMapping = value;
+
+		return this;
+
+	}
+
+	/**
+	 * Gets the tone mapping type.
+	 *
+	 * @returns {number} The tone mapping type.
+	 */
+	getToneMapping() {
+
+		return this._toneMapping;
 
 	}
 
@@ -86,7 +110,7 @@ class RenderOutputNode extends TempNode {
 
 		// tone mapping
 
-		const toneMapping = ( this.toneMapping !== null ? this.toneMapping : context.toneMapping ) || NoToneMapping;
+		const toneMapping = ( this._toneMapping !== null ? this._toneMapping : context.toneMapping ) || NoToneMapping;
 		const outputColorSpace = ( this.outputColorSpace !== null ? this.outputColorSpace : context.outputColorSpace ) || NoColorSpace;
 
 		if ( toneMapping !== NoToneMapping ) {
@@ -114,10 +138,11 @@ export default RenderOutputNode;
 /**
  * TSL function for creating a posterize node.
  *
+ * @tsl
  * @function
  * @param {Node} color - The color node to process.
- * @param {Number?} [toneMapping=null] - The tone mapping type.
- * @param {String?} [outputColorSpace=null] - The output color space.
+ * @param {?number} [toneMapping=null] - The tone mapping type.
+ * @param {?string} [outputColorSpace=null] - The output color space.
  * @returns {RenderOutputNode}
  */
 export const renderOutput = ( color, toneMapping = null, outputColorSpace = null ) => nodeObject( new RenderOutputNode( nodeObject( color ), toneMapping, outputColorSpace ) );

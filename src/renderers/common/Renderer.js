@@ -16,23 +16,33 @@ import QuadMesh from './QuadMesh.js';
 import RenderBundles from './RenderBundles.js';
 import NodeLibrary from './nodes/NodeLibrary.js';
 import Lighting from './Lighting.js';
+import XRManager from './XRManager.js';
+import InspectorBase from './InspectorBase.js';
+import CanvasTarget from './CanvasTarget.js';
 
 import NodeMaterial from '../../materials/nodes/NodeMaterial.js';
 
 import { Scene } from '../../scenes/Scene.js';
+import { ColorManagement } from '../../math/ColorManagement.js';
 import { Frustum } from '../../math/Frustum.js';
+import { FrustumArray } from '../../math/FrustumArray.js';
 import { Matrix4 } from '../../math/Matrix4.js';
 import { Vector2 } from '../../math/Vector2.js';
 import { Vector4 } from '../../math/Vector4.js';
 import { RenderTarget } from '../../core/RenderTarget.js';
-import { DoubleSide, BackSide, FrontSide, SRGBColorSpace, NoToneMapping, LinearFilter, LinearSRGBColorSpace, HalfFloatType, RGBAFormat, PCFShadowMap } from '../../constants.js';
+import { DoubleSide, BackSide, FrontSide, SRGBColorSpace, NoToneMapping, LinearFilter, HalfFloatType, RGBAFormat, PCFShadowMap } from '../../constants.js';
 
-/** @module Renderer **/
+import { float, vec3, vec4 } from '../../nodes/tsl/TSLCore.js';
+import { reference } from '../../nodes/accessors/ReferenceNode.js';
+import { highpModelNormalViewMatrix, highpModelViewMatrix } from '../../nodes/accessors/ModelNode.js';
+import { error, warn, warnOnce } from '../../utils.js';
 
 const _scene = /*@__PURE__*/ new Scene();
 const _drawingBufferSize = /*@__PURE__*/ new Vector2();
 const _screen = /*@__PURE__*/ new Vector4();
 const _frustum = /*@__PURE__*/ new Frustum();
+const _frustumArray = /*@__PURE__*/ new FrustumArray();
+
 const _projScreenMatrix = /*@__PURE__*/ new Matrix4();
 const _vector4 = /*@__PURE__*/ new Vector4();
 
@@ -42,25 +52,35 @@ const _vector4 = /*@__PURE__*/ new Vector4();
 class Renderer {
 
 	/**
+	 * Renderer options.
+	 *
+	 * @typedef {Object} Renderer~Options
+	 * @property {boolean} [logarithmicDepthBuffer=false] - Whether logarithmic depth buffer is enabled or not.
+	 * @property {boolean} [alpha=true] - Whether the default framebuffer (which represents the final contents of the canvas) should be transparent or opaque.
+	 * @property {boolean} [depth=true] - Whether the default framebuffer should have a depth buffer or not.
+	 * @property {boolean} [stencil=false] - Whether the default framebuffer should have a stencil buffer or not.
+	 * @property {boolean} [antialias=false] - Whether MSAA as the default anti-aliasing should be enabled or not.
+	 * @property {number} [samples=0] - When `antialias` is `true`, `4` samples are used by default. This parameter can set to any other integer value than 0
+	 * to overwrite the default.
+	 * @property {?Function} [getFallback=null] - This callback function can be used to provide a fallback backend, if the primary backend can't be targeted.
+	 * @property {number} [colorBufferType=HalfFloatType] - Defines the type of color buffers. The default `HalfFloatType` is recommend for best
+	 * quality. To save memory and bandwidth, `UnsignedByteType` might be used. This will reduce rendering quality though.
+	 * @property {boolean} [multiview=false] - If set to `true`, the renderer will use multiview during WebXR rendering if supported.
+	 */
+
+	/**
 	 * Constructs a new renderer.
 	 *
 	 * @param {Backend} backend - The backend the renderer is targeting (e.g. WebGPU or WebGL 2).
-	 * @param {Object} parameters - The configuration parameter.
-	 * @param {Boolean} [parameters.logarithmicDepthBuffer=false] - Whether logarithmic depth buffer is enabled or not.
-	 * @param {Boolean} [parameters.alpha=true] - Whether the default framebuffer (which represents the final contents of the canvas) should be transparent or opaque.
-	 * @param {Boolean} [parameters.depth=true] - Whether the default framebuffer should have a depth buffer or not.
-	 * @param {Boolean} [parameters.stencil=false] - Whether the default framebuffer should have a stencil buffer or not.
-	 * @param {Boolean} [parameters.antialias=false] - Whether MSAA as the default anti-aliasing should be enabled or not.
-	 * @param {Number} [parameters.samples=0] - When `antialias` is `true`, `4` samples are used by default. This parameter can set to any other integer value than 0
-	 * to overwrite the default.
-	 * @param {Function?} [parameters.getFallback=null] - This callback function can be used to provide a fallback backend, if the primary backend can't be targeted.
+	 * @param {Renderer~Options} [parameters] - The configuration parameter.
+
 	 */
 	constructor( backend, parameters = {} ) {
 
 		/**
 		 * This flag can be used for type testing.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @readonly
 		 * @default true
 		 */
@@ -75,17 +95,10 @@ class Renderer {
 			stencil = false,
 			antialias = false,
 			samples = 0,
-			getFallback = null
+			getFallback = null,
+			colorBufferType = HalfFloatType,
+			multiview = false
 		} = parameters;
-
-		/**
-		 * A reference to the canvas element the renderer is drawing to.
-		 * This value of this property will automatically be created by
-		 * the renderer.
-		 *
-		 * @type {HTMLCanvasElement|OffscreenCanvas}
-		 */
-		this.domElement = backend.getDomElement();
 
 		/**
 		 * A reference to the current backend.
@@ -95,19 +108,11 @@ class Renderer {
 		this.backend = backend;
 
 		/**
-		 * The number of MSAA samples.
-		 *
-		 * @type {Number}
-		 * @default 0
-		 */
-		this.samples = samples || ( antialias === true ) ? 4 : 0;
-
-		/**
 		 * Whether the renderer should automatically clear the current rendering target
 		 * before execute a `render()` call. The target can be the canvas (default framebuffer)
 		 * or the current bound render target (custom framebuffer).
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default true
 		 */
 		this.autoClear = true;
@@ -116,7 +121,7 @@ class Renderer {
 		 * When `autoClear` is set to `true`, this property defines whether the renderer
 		 * should clear the color buffer.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default true
 		 */
 		this.autoClearColor = true;
@@ -125,7 +130,7 @@ class Renderer {
 		 * When `autoClear` is set to `true`, this property defines whether the renderer
 		 * should clear the depth buffer.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default true
 		 */
 		this.autoClearDepth = true;
@@ -134,7 +139,7 @@ class Renderer {
 		 * When `autoClear` is set to `true`, this property defines whether the renderer
 		 * should clear the stencil buffer.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default true
 		 */
 		this.autoClearStencil = true;
@@ -142,7 +147,7 @@ class Renderer {
 		/**
 		 * Whether the default framebuffer should be transparent or opaque.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default true
 		 */
 		this.alpha = alpha;
@@ -150,7 +155,7 @@ class Renderer {
 		/**
 		 * Whether logarithmic depth buffer is enabled or not.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default false
 		 */
 		this.logarithmicDepthBuffer = logarithmicDepthBuffer;
@@ -158,7 +163,7 @@ class Renderer {
 		/**
 		 * Defines the output color space of the renderer.
 		 *
-		 * @type {String}
+		 * @type {string}
 		 * @default SRGBColorSpace
 		 */
 		this.outputColorSpace = SRGBColorSpace;
@@ -166,7 +171,7 @@ class Renderer {
 		/**
 		 * Defines the tone mapping of the renderer.
 		 *
-		 * @type {Number}
+		 * @type {number}
 		 * @default NoToneMapping
 		 */
 		this.toneMapping = NoToneMapping;
@@ -174,7 +179,7 @@ class Renderer {
 		/**
 		 * Defines the tone mapping exposure.
 		 *
-		 * @type {Number}
+		 * @type {number}
 		 * @default 1
 		 */
 		this.toneMappingExposure = 1.0;
@@ -187,7 +192,7 @@ class Renderer {
 		 * it may be necessary to turn off sorting and use other methods to deal with transparency rendering
 		 * e.g. manually determining each object's rendering order.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default true
 		 */
 		this.sortObjects = true;
@@ -195,7 +200,7 @@ class Renderer {
 		/**
 		 * Whether the default framebuffer should have a depth buffer or not.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default true
 		 */
 		this.depth = depth;
@@ -203,7 +208,7 @@ class Renderer {
 		/**
 		 * Whether the default framebuffer should have a stencil buffer or not.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default false
 		 */
 		this.stencil = stencil;
@@ -212,11 +217,19 @@ class Renderer {
 		 * Holds a series of statistical information about the GPU memory
 		 * and the rendering process. Useful for debugging and monitoring.
 		 *
-		 * @type {Boolean}
+		 * @type {Info}
 		 */
 		this.info = new Info();
 
-		this.nodes = {
+		/**
+		 * Stores override nodes for specific transformations or calculations.
+		 * These nodes can be used to replace default behavior in the rendering pipeline.
+		 *
+		 * @type {Object}
+		 * @property {?Node} modelViewMatrix - An override node for the model-view matrix.
+		 * @property {?Node} modelNormalViewMatrix - An override node for the model normal view matrix.
+		 */
+		this.overrideNodes = {
 			modelViewMatrix: null,
 			modelNormalViewMatrix: null
 		};
@@ -242,67 +255,54 @@ class Renderer {
 		// internals
 
 		/**
-		 * This callback function can be used to provide a fallback backend, if the primary backend can't be targeted.
+		 * The number of MSAA samples.
+		 *
+		 * @private
+		 * @type {number}
+		 * @default 0
+		 */
+		this._samples = samples || ( antialias === true ) ? 4 : 0;
+
+		/**
+		 * OnCanvasTargetResize callback function.
 		 *
 		 * @private
 		 * @type {Function}
 		 */
+		this._onCanvasTargetResize = this._onCanvasTargetResize.bind( this );
+
+		/**
+		 * The canvas target for rendering.
+		 *
+		 * @private
+		 * @type {CanvasTarget}
+		 */
+		this._canvasTarget = new CanvasTarget( backend.getDomElement() );
+		this._canvasTarget.addEventListener( 'resize', this._onCanvasTargetResize );
+		this._canvasTarget.isDefaultCanvasTarget = true;
+
+		/**
+		 * The inspector provides information about the internal renderer state.
+		 *
+		 * @private
+		 * @type {InspectorBase}
+		 */
+		this._inspector = new InspectorBase();
+		this._inspector.setRenderer( this );
+
+		/**
+		 * This callback function can be used to provide a fallback backend, if the primary backend can't be targeted.
+		 *
+		 * @private
+		 * @type {?Function}
+		 */
 		this._getFallback = getFallback;
-
-		/**
-		 * The renderer's pixel ration.
-		 *
-		 * @private
-		 * @type {Number}
-		 * @default 1
-		 */
-		this._pixelRatio = 1;
-
-		/**
-		 * The width of the renderer's default framebuffer in logical pixel unit.
-		 *
-		 * @private
-		 * @type {Number}
-		 */
-		this._width = this.domElement.width;
-
-		/**
-		 * The height of the renderer's default framebuffer in logical pixel unit.
-		 *
-		 * @private
-		 * @type {Number}
-		 */
-		this._height = this.domElement.height;
-
-		/**
-		 * The viewport of the renderer in logical pixel unit.
-		 *
-		 * @private
-		 * @type {Vector4}
-		 */
-		this._viewport = new Vector4( 0, 0, this._width, this._height );
-
-		/**
-		 * The scissor rectangle of the renderer in logical pixel unit.
-		 *
-		 * @private
-		 * @type {Vector4}
-		 */
-		this._scissor = new Vector4( 0, 0, this._width, this._height );
-
-		/**
-		 * Whether the scissor test should be enabled or not.
-		 *
-		 * @private
-		 * @type {Vector4}
-		 */
-		this._scissorTest = false;
 
 		/**
 		 * A reference to a renderer module for managing shader attributes.
 		 *
 		 * @private
-		 * @type {Attributes?}
+		 * @type {?Attributes}
 		 * @default null
 		 */
 		this._attributes = null;
@@ -311,7 +311,7 @@ class Renderer {
 		 * A reference to a renderer module for managing geometries.
 		 *
 		 * @private
-		 * @type {Geometries?}
+		 * @type {?Geometries}
 		 * @default null
 		 */
 		this._geometries = null;
@@ -320,7 +320,7 @@ class Renderer {
 		 * A reference to a renderer module for managing node related logic.
 		 *
 		 * @private
-		 * @type {Nodes?}
+		 * @type {?Nodes}
 		 * @default null
 		 */
 		this._nodes = null;
@@ -329,7 +329,7 @@ class Renderer {
 		 * A reference to a renderer module for managing the internal animation loop.
 		 *
 		 * @private
-		 * @type {Animation?}
+		 * @type {?Animation}
 		 * @default null
 		 */
 		this._animation = null;
@@ -338,7 +338,7 @@ class Renderer {
 		 * A reference to a renderer module for managing shader program bindings.
 		 *
 		 * @private
-		 * @type {Bindings?}
+		 * @type {?Bindings}
 		 * @default null
 		 */
 		this._bindings = null;
@@ -347,7 +347,7 @@ class Renderer {
 		 * A reference to a renderer module for managing render objects.
 		 *
 		 * @private
-		 * @type {RenderObjects?}
+		 * @type {?RenderObjects}
 		 * @default null
 		 */
 		this._objects = null;
@@ -356,7 +356,7 @@ class Renderer {
 		 * A reference to a renderer module for managing render and compute pipelines.
 		 *
 		 * @private
-		 * @type {Pipelines?}
+		 * @type {?Pipelines}
 		 * @default null
 		 */
 		this._pipelines = null;
@@ -365,7 +365,7 @@ class Renderer {
 		 * A reference to a renderer module for managing render bundles.
 		 *
 		 * @private
-		 * @type {RenderBundles?}
+		 * @type {?RenderBundles}
 		 * @default null
 		 */
 		this._bundles = null;
@@ -374,7 +374,7 @@ class Renderer {
 		 * A reference to a renderer module for managing render lists.
 		 *
 		 * @private
-		 * @type {RenderLists?}
+		 * @type {?RenderLists}
 		 * @default null
 		 */
 		this._renderLists = null;
@@ -383,7 +383,7 @@ class Renderer {
 		 * A reference to a renderer module for managing render contexts.
 		 *
 		 * @private
-		 * @type {RenderContexts?}
+		 * @type {?RenderContexts}
 		 * @default null
 		 */
 		this._renderContexts = null;
@@ -392,7 +392,7 @@ class Renderer {
 		 * A reference to a renderer module for managing textures.
 		 *
 		 * @private
-		 * @type {Textures?}
+		 * @type {?Textures}
 		 * @default null
 		 */
 		this._textures = null;
@@ -401,7 +401,7 @@ class Renderer {
 		 * A reference to a renderer module for backgrounds.
 		 *
 		 * @private
-		 * @type {Background?}
+		 * @type {?Background}
 		 * @default null
 		 */
 		this._background = null;
@@ -414,13 +414,14 @@ class Renderer {
 		 * @type {QuadMesh}
 		 */
 		this._quad = new QuadMesh( new NodeMaterial() );
-		this._quad.material.name = 'Renderer_output';
+		this._quad.name = 'Output Color Transform';
+		this._quad.material.name = 'outputColorTransform';
 
 		/**
 		 * A reference to the current render context.
 		 *
 		 * @private
-		 * @type {RenderContext?}
+		 * @type {?RenderContext}
 		 * @default null
 		 */
 		this._currentRenderContext = null;
@@ -429,7 +430,7 @@ class Renderer {
 		 * A custom sort function for the opaque render list.
 		 *
 		 * @private
-		 * @type {Function?}
+		 * @type {?Function}
 		 * @default null
 		 */
 		this._opaqueSort = null;
@@ -438,7 +439,7 @@ class Renderer {
 		 * A custom sort function for the transparent render list.
 		 *
 		 * @private
-		 * @type {Function?}
+		 * @type {?Function}
 		 * @default null
 		 */
 		this._transparentSort = null;
@@ -447,7 +448,7 @@ class Renderer {
 		 * The framebuffer target.
 		 *
 		 * @private
-		 * @type {RenderTarget?}
+		 * @type {?RenderTarget}
 		 * @default null
 		 */
 		this._frameBufferTarget = null;
@@ -466,7 +467,7 @@ class Renderer {
 		 * The clear depth value.
 		 *
 		 * @private
-		 * @type {Number}
+		 * @type {number}
 		 * @default 1
 		 */
 		this._clearDepth = 1;
@@ -475,7 +476,7 @@ class Renderer {
 		 * The clear stencil value.
 		 *
 		 * @private
-		 * @type {Number}
+		 * @type {number}
 		 * @default 0
 		 */
 		this._clearStencil = 0;
@@ -484,7 +485,7 @@ class Renderer {
 		 * The current render target.
 		 *
 		 * @private
-		 * @type {RenderTarget?}
+		 * @type {?RenderTarget}
 		 * @default null
 		 */
 		this._renderTarget = null;
@@ -493,7 +494,7 @@ class Renderer {
 		 * The active cube face.
 		 *
 		 * @private
-		 * @type {Number}
+		 * @type {number}
 		 * @default 0
 		 */
 		this._activeCubeFace = 0;
@@ -502,16 +503,25 @@ class Renderer {
 		 * The active mipmap level.
 		 *
 		 * @private
-		 * @type {Number}
+		 * @type {number}
 		 * @default 0
 		 */
 		this._activeMipmapLevel = 0;
 
 		/**
+		 * The current output render target.
+		 *
+		 * @private
+		 * @type {?RenderTarget}
+		 * @default null
+		 */
+		this._outputRenderTarget = null;
+
+		/**
 		 * The MRT setting.
 		 *
 		 * @private
-		 * @type {MRTNode?}
+		 * @type {?MRTNode}
 		 * @default null
 		 */
 		this._mrt = null;
@@ -521,7 +531,7 @@ class Renderer {
 		 * to be rendered.
 		 *
 		 * @private
-		 * @type {Function?}
+		 * @type {?Function}
 		 * @default null
 		 */
 		this._renderObjectFunction = null;
@@ -530,7 +540,7 @@ class Renderer {
 		 * Used to keep track of the current render object function.
 		 *
 		 * @private
-		 * @type {Function?}
+		 * @type {?Function}
 		 * @default null
 		 */
 		this._currentRenderObjectFunction = null;
@@ -539,7 +549,7 @@ class Renderer {
 		 * Used to keep track of the current render bundle.
 		 *
 		 * @private
-		 * @type {RenderBundle?}
+		 * @type {?RenderBundle}
 		 * @default null
 		 */
 		this._currentRenderBundle = null;
@@ -553,7 +563,7 @@ class Renderer {
 		 * and pipeline updates.
 		 *
 		 * @private
-		 * @type {Function?}
+		 * @type {?Function}
 		 * @default null
 		 */
 		this._handleObjectFunction = this._renderObjectDirect;
@@ -564,7 +574,7 @@ class Renderer {
 		 * isn't possible anymore.
 		 *
 		 * @private
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default false
 		 */
 		this._isDeviceLost = false;
@@ -577,10 +587,29 @@ class Renderer {
 		this.onDeviceLost = this._onDeviceLost;
 
 		/**
+		 * Defines the type of color buffers. The default `HalfFloatType` is recommend for
+		 * best quality. To save memory and bandwidth, `UnsignedByteType` might be used.
+		 * This will reduce rendering quality though.
+		 *
+		 * @private
+		 * @type {number}
+		 * @default HalfFloatType
+		 */
+		this._colorBufferType = colorBufferType;
+
+		/**
+		 * A cache for shadow nodes per material
+		 *
+		 * @private
+		 * @type {WeakMap<Material, Object>}
+		 */
+		this._cacheShadowNodes = new WeakMap();
+
+		/**
 		 * Whether the renderer has been initialized or not.
 		 *
 		 * @private
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default false
 		 */
 		this._initialized = false;
@@ -589,7 +618,7 @@ class Renderer {
 		 * A reference to the promise which initializes the renderer.
 		 *
 		 * @private
-		 * @type {Promise?}
+		 * @type {?Promise<this>}
 		 * @default null
 		 */
 		this._initPromise = null;
@@ -598,7 +627,7 @@ class Renderer {
 		 * An array of compilation promises which are used in `compileAsync()`.
 		 *
 		 * @private
-		 * @type {Array<Promise>?}
+		 * @type {?Array<Promise>}
 		 * @default null
 		 */
 		this._compilationPromises = null;
@@ -606,7 +635,7 @@ class Renderer {
 		/**
 		 * Whether the renderer should render transparent render objects or not.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default true
 		 */
 		this.transparent = true;
@@ -614,7 +643,7 @@ class Renderer {
 		/**
 		 * Whether the renderer should render opaque render objects or not.
 		 *
-		 * @type {Boolean}
+		 * @type {boolean}
 		 * @default true
 		 */
 		this.opaque = true;
@@ -622,14 +651,14 @@ class Renderer {
 		/**
 		 * Shadow map configuration
 		 * @typedef {Object} ShadowMapConfig
-		 * @property {Boolean} enabled - Whether to globally enable shadows or not.
-		 * @property {Number} type - The shadow map type.
+		 * @property {boolean} enabled - Whether to globally enable shadows or not.
+		 * @property {number} type - The shadow map type.
 		 */
 
 		/**
 		 * The renderer's shadow configuration.
 		 *
-		 * @type {module:Renderer~ShadowMapConfig}
+		 * @type {ShadowMapConfig}
 		 */
 		this.shadowMap = {
 			enabled: false,
@@ -639,30 +668,28 @@ class Renderer {
 		/**
 		 * XR configuration.
 		 * @typedef {Object} XRConfig
-		 * @property {Boolean} enabled - Whether to globally enable XR or not.
+		 * @property {boolean} enabled - Whether to globally enable XR or not.
 		 */
 
 		/**
-		 * The renderer's XR configuration.
+		 * The renderer's XR manager.
 		 *
-		 * @type {module:Renderer~XRConfig}
+		 * @type {XRManager}
 		 */
-		this.xr = {
-			enabled: false
-		};
+		this.xr = new XRManager( this, multiview );
 
 		/**
 		 * Debug configuration.
 		 * @typedef {Object} DebugConfig
-		 * @property {Boolean} checkShaderErrors - Whether shader errors should be checked or not.
-		 * @property {Function} onShaderError - A callback function that is executed when a shader error happens. Only supported with WebGL 2 right now.
+		 * @property {boolean} checkShaderErrors - Whether shader errors should be checked or not.
+		 * @property {?Function} onShaderError - A callback function that is executed when a shader error happens. Only supported with WebGL 2 right now.
 		 * @property {Function} getShaderAsync - Allows the get the raw shader code for the given scene, camera and 3D object.
 		 */
 
 		/**
 		 * The renderer's debug configuration.
 		 *
-		 * @type {module:Renderer~DebugConfig}
+		 * @type {DebugConfig}
 		 */
 		this.debug = {
 			checkShaderErrors: true,
@@ -691,15 +718,9 @@ class Renderer {
 	 * Initializes the renderer so it is ready for usage.
 	 *
 	 * @async
-	 * @return {Promise} A Promise that resolves when the renderer has been initialized.
+	 * @return {Promise<this>} A Promise that resolves when the renderer has been initialized.
 	 */
 	async init() {
-
-		if ( this._initialized ) {
-
-			throw new Error( 'Renderer: Backend has already been initialized.' );
-
-		}
 
 		if ( this._initPromise !== null ) {
 
@@ -743,7 +764,7 @@ class Renderer {
 			}
 
 			this._nodes = new Nodes( this, backend );
-			this._animation = new Animation( this._nodes, this.info );
+			this._animation = new Animation( this, this._nodes, this.info );
 			this._attributes = new Attributes( backend );
 			this._background = new Background( this, this._nodes );
 			this._geometries = new Geometries( this._attributes, this.info );
@@ -760,11 +781,30 @@ class Renderer {
 			this._animation.start();
 			this._initialized = true;
 
-			resolve();
+			//
+
+			this._inspector.init();
+
+			//
+
+			resolve( this );
 
 		} );
 
 		return this._initPromise;
+
+	}
+
+	/**
+	 * A reference to the canvas element the renderer is drawing to.
+	 * This value of this property will automatically be created by
+	 * the renderer.
+	 *
+	 * @type {HTMLCanvasElement|OffscreenCanvas}
+	 */
+	get domElement() {
+
+		return this._canvasTarget.domElement;
 
 	}
 
@@ -774,7 +814,7 @@ class Renderer {
 	 * `THREE.WebGPUCoordinateSystem`.
 	 *
 	 * @readonly
-	 * @type {Number}
+	 * @type {number}
 	 */
 	get coordinateSystem() {
 
@@ -794,8 +834,8 @@ class Renderer {
 	 * @async
 	 * @param {Object3D} scene - The scene or 3D object to precompile.
 	 * @param {Camera} camera - The camera that is used to render the scene.
-	 * @param {Scene} targetScene - If the first argument is a 3D object, this parameter must represent the scene the 3D object is going to be added.
-	 * @return {Promise} A Promise that resolves when the compile has been finished.
+	 * @param {?Scene} targetScene - If the first argument is a 3D object, this parameter must represent the scene the 3D object is going to be added.
+	 * @return {Promise<Array|undefined>} A Promise that resolves when the compile has been finished.
 	 */
 	async compileAsync( scene, camera, targetScene = null ) {
 
@@ -925,17 +965,18 @@ class Renderer {
 	 * Renders the scene in an async fashion.
 	 *
 	 * @async
+	 * @deprecated
 	 * @param {Object3D} scene - The scene or 3D object to render.
 	 * @param {Camera} camera - The camera.
 	 * @return {Promise} A Promise that resolves when the render has been finished.
 	 */
 	async renderAsync( scene, camera ) {
 
-		if ( this._initialized === false ) await this.init();
+		warnOnce( 'Renderer: "renderAsync()" has been deprecated. Use "render()" and "await renderer.init();" when creating the renderer.' ); // @deprecated r181
 
-		const renderContext = this._renderScene( scene, camera );
+		await this.init();
 
-		await this.backend.resolveTimestampAsync( renderContext, 'render' );
+		this.render( scene, camera );
 
 	}
 
@@ -944,11 +985,75 @@ class Renderer {
 	 * the CPU waits for the GPU to complete its operation (e.g. a compute task).
 	 *
 	 * @async
+	 * @deprecated
 	 * @return {Promise} A Promise that resolves when synchronization has been finished.
 	 */
 	async waitForGPU() {
 
-		await this.backend.waitForGPU();
+		error( 'Renderer: waitForGPU() has been removed. Read https://github.com/mrdoob/three.js/issues/32012 for more information.' );
+
+	}
+
+	//
+
+	/**
+	 * Sets the inspector instance. The inspector can be any class that extends from `InspectorBase`.
+	 *
+	 * @param {InspectorBase} value - The new inspector.
+	 */
+	set inspector( value ) {
+
+		if ( this._inspector !== null ) {
+
+			this._inspector.setRenderer( null );
+
+		}
+
+		this._inspector = value;
+		this._inspector.setRenderer( this );
+
+	}
+
+	get inspector() {
+
+		return this._inspector;
+
+	}
+
+	/**
+	 * Enables or disables high precision for model-view and normal-view matrices.
+	 * When enabled, will use CPU 64-bit precision for higher precision instead of GPU 32-bit for higher performance.
+	 *
+	 * NOTE: 64-bit precision is not compatible with `InstancedMesh` and `SkinnedMesh`.
+	 *
+	 * @param {boolean} value - Whether to enable or disable high precision.
+	 * @type {boolean}
+	 */
+	set highPrecision( value ) {
+
+		if ( value === true ) {
+
+			this.overrideNodes.modelViewMatrix = highpModelViewMatrix;
+			this.overrideNodes.modelNormalViewMatrix = highpModelNormalViewMatrix;
+
+		} else if ( this.highPrecision ) {
+
+			this.overrideNodes.modelViewMatrix = null;
+			this.overrideNodes.modelNormalViewMatrix = null;
+
+		}
+
+	}
+
+	/**
+	 * Returns whether high precision is enabled or not.
+	 *
+	 * @return {boolean} Whether high precision is enabled or not.
+	 * @type {boolean}
+	 */
+	get highPrecision() {
+
+		return this.overrideNodes.modelViewMatrix === highpModelViewMatrix && this.overrideNodes.modelNormalViewMatrix === highpModelNormalViewMatrix;
 
 	}
 
@@ -978,6 +1083,17 @@ class Renderer {
 	}
 
 	/**
+	 * Returns the color buffer type.
+	 *
+	 * @return {number} The color buffer type.
+	 */
+	getColorBufferType() {
+
+		return this._colorBufferType;
+
+	}
+
+	/**
 	 * Default implementation of the device lost callback.
 	 *
 	 * @private
@@ -993,7 +1109,7 @@ class Renderer {
 
 		}
 
-		console.error( errorMessage );
+		error( errorMessage );
 
 		this._isDeviceLost = true;
 
@@ -1005,7 +1121,7 @@ class Renderer {
 	 * @private
 	 * @param {Object} bundle - Render bundle data.
 	 * @param {Scene} sceneRef - The scene the render bundle belongs to.
-	 * @param {LightsNode} lightsNode - The current lights node.
+	 * @param {LightsNode} lightsNode - The lights node.
 	 */
 	_renderBundle( bundle, sceneRef, lightsNode ) {
 
@@ -1039,9 +1155,14 @@ class Renderer {
 
 			this._currentRenderBundle = renderBundle;
 
-			const opaqueObjects = renderList.opaque;
+			const {
+				transparentDoublePass: transparentDoublePassObjects,
+				transparent: transparentObjects,
+				opaque: opaqueObjects
+			} = renderList;
 
 			if ( this.opaque === true && opaqueObjects.length > 0 ) this._renderObjects( opaqueObjects, camera, sceneRef, lightsNode );
+			if ( this.transparent === true && transparentObjects.length > 0 ) this._renderTransparents( transparentObjects, transparentDoublePassObjects, camera, sceneRef, lightsNode );
 
 			this._currentRenderBundle = null;
 
@@ -1080,27 +1201,40 @@ class Renderer {
 
 	/**
 	 * Renders the scene or 3D object with the given camera. This method can only be called
-	 * if the renderer has been initialized.
+	 * if the renderer has been initialized. When using `render()` inside an animation loop,
+	 * it's guaranteed the renderer will be initialized. The animation loop must be defined
+	 * with {@link Renderer#setAnimationLoop} though.
+	 *
+	 * For all other use cases (like when using on-demand rendering), you must call
+	 * {@link Renderer#init} before rendering.
 	 *
 	 * The target of the method is the default framebuffer (meaning the canvas)
 	 * or alternatively a render target when specified via `setRenderTarget()`.
 	 *
 	 * @param {Object3D} scene - The scene or 3D object to render.
 	 * @param {Camera} camera - The camera to render the scene with.
-	 * @return {Promise?} A Promise that resolve when the scene has been rendered.
-	 * Only returned when the renderer has not been initialized.
 	 */
 	render( scene, camera ) {
 
 		if ( this._initialized === false ) {
 
-			console.warn( 'THREE.Renderer: .render() called before the backend is initialized. Try using .renderAsync() instead.' );
-
-			return this.renderAsync( scene, camera );
+			throw new Error( 'Renderer: .render() called before the backend is initialized. Use "await renderer.init();" before rendering.' );
 
 		}
 
 		this._renderScene( scene, camera );
+
+	}
+
+	/**
+	 * Returns whether the renderer has been initialized or not.
+	 *
+	 * @readonly
+	 * @return {boolean} Whether the renderer has been initialized or not.
+	 */
+	get initialized() {
+
+		return this._initialized;
 
 	}
 
@@ -1110,14 +1244,14 @@ class Renderer {
 	 * pass and not inline to achieve more correct results.
 	 *
 	 * @private
-	 * @return {RenderTarget?} The render target. The method returns `null` if no output conversion should be applied.
+	 * @return {?RenderTarget} The render target. The method returns `null` if no output conversion should be applied.
 	 */
 	_getFrameBufferTarget() {
 
 		const { currentToneMapping, currentColorSpace } = this;
 
 		const useToneMapping = currentToneMapping !== NoToneMapping;
-		const useColorSpace = currentColorSpace !== LinearSRGBColorSpace;
+		const useColorSpace = currentColorSpace !== ColorManagement.workingColorSpace;
 
 		if ( useToneMapping === false && useColorSpace === false ) return null;
 
@@ -1131,9 +1265,9 @@ class Renderer {
 			frameBufferTarget = new RenderTarget( width, height, {
 				depthBuffer: depth,
 				stencilBuffer: stencil,
-				type: HalfFloatType, // FloatType
+				type: this._colorBufferType,
 				format: RGBAFormat,
-				colorSpace: LinearSRGBColorSpace,
+				colorSpace: ColorManagement.workingColorSpace,
 				generateMipmaps: false,
 				minFilter: LinearFilter,
 				magFilter: LinearFilter,
@@ -1146,14 +1280,30 @@ class Renderer {
 
 		}
 
+		const outputRenderTarget = this.getOutputRenderTarget();
+
 		frameBufferTarget.depthBuffer = depth;
 		frameBufferTarget.stencilBuffer = stencil;
-		frameBufferTarget.setSize( width, height );
-		frameBufferTarget.viewport.copy( this._viewport );
-		frameBufferTarget.scissor.copy( this._scissor );
-		frameBufferTarget.viewport.multiplyScalar( this._pixelRatio );
-		frameBufferTarget.scissor.multiplyScalar( this._pixelRatio );
-		frameBufferTarget.scissorTest = this._scissorTest;
+		if ( outputRenderTarget !== null ) {
+
+			frameBufferTarget.setSize( outputRenderTarget.width, outputRenderTarget.height, outputRenderTarget.depth );
+
+		} else {
+
+			frameBufferTarget.setSize( width, height, 1 );
+
+		}
+
+		const canvasTarget = this._canvasTarget;
+
+		frameBufferTarget.viewport.copy( canvasTarget._viewport );
+		frameBufferTarget.scissor.copy( canvasTarget._scissor );
+		frameBufferTarget.viewport.multiplyScalar( canvasTarget._pixelRatio );
+		frameBufferTarget.scissor.multiplyScalar( canvasTarget._pixelRatio );
+		frameBufferTarget.scissorTest = canvasTarget._scissorTest;
+		frameBufferTarget.multiview = outputRenderTarget !== null ? outputRenderTarget.multiview : false;
+		frameBufferTarget.resolveDepthBuffer = outputRenderTarget !== null ? outputRenderTarget.resolveDepthBuffer : true;
+		frameBufferTarget._autoAllocateDepthBuffer = outputRenderTarget !== null ? outputRenderTarget._autoAllocateDepthBuffer : false;
 
 		return frameBufferTarget;
 
@@ -1165,12 +1315,14 @@ class Renderer {
 	 * @private
 	 * @param {Object3D} scene - The scene or 3D object to render.
 	 * @param {Camera} camera - The camera to render the scene with.
-	 * @param {Boolean} [useFrameBufferTarget=true] - Whether to use a framebuffer target or not.
+	 * @param {boolean} [useFrameBufferTarget=true] - Whether to use a framebuffer target or not.
 	 * @return {RenderContext} The current render context.
 	 */
 	_renderScene( scene, camera, useFrameBufferTarget = true ) {
 
 		if ( this._isDeviceLost === true ) return;
+
+		//
 
 		const frameBufferTarget = useFrameBufferTarget ? this._getFrameBufferTarget() : null;
 
@@ -1186,7 +1338,7 @@ class Renderer {
 
 		const sceneRef = ( scene.isScene === true ) ? scene : _scene;
 
-		const outputRenderTarget = this._renderTarget;
+		const outputRenderTarget = this._renderTarget || this._outputRenderTarget;
 
 		const activeCubeFace = this._activeCubeFace;
 		const activeMipmapLevel = this._activeMipmapLevel;
@@ -1224,13 +1376,30 @@ class Renderer {
 
 		//
 
-		const coordinateSystem = this.coordinateSystem;
+		this.backend.updateTimeStampUID( renderContext );
 
-		if ( camera.coordinateSystem !== coordinateSystem ) {
+		this.inspector.beginRender( this.backend.getTimestampUID( renderContext ), scene, camera, renderTarget );
+
+		//
+
+		const coordinateSystem = this.coordinateSystem;
+		const xr = this.xr;
+
+		if ( camera.coordinateSystem !== coordinateSystem && xr.isPresenting === false ) {
 
 			camera.coordinateSystem = coordinateSystem;
-
 			camera.updateProjectionMatrix();
+
+			if ( camera.isArrayCamera ) {
+
+				for ( const subCamera of camera.cameras ) {
+
+					subCamera.coordinateSystem = coordinateSystem;
+					subCamera.updateProjectionMatrix();
+
+				}
+
+			}
 
 		}
 
@@ -1240,11 +1409,20 @@ class Renderer {
 
 		if ( camera.parent === null && camera.matrixWorldAutoUpdate === true ) camera.updateMatrixWorld();
 
+		if ( xr.enabled === true && xr.isPresenting === true ) {
+
+			if ( xr.cameraAutoUpdate === true ) xr.updateCamera( camera );
+			camera = xr.getCamera(); // use XR camera for rendering
+
+		}
+
 		//
 
-		let viewport = this._viewport;
-		let scissor = this._scissor;
-		let pixelRatio = this._pixelRatio;
+		const canvasTarget = this._canvasTarget;
+
+		let viewport = canvasTarget._viewport;
+		let scissor = canvasTarget._scissor;
+		let pixelRatio = canvasTarget._pixelRatio;
 
 		if ( renderTarget !== null ) {
 
@@ -1269,7 +1447,7 @@ class Renderer {
 		renderContext.viewport = renderContext.viewportValue.equals( _screen ) === false;
 
 		renderContext.scissorValue.copy( scissor ).multiplyScalar( pixelRatio ).floor();
-		renderContext.scissor = this._scissorTest && renderContext.scissorValue.equals( _screen ) === false;
+		renderContext.scissor = canvasTarget._scissorTest && renderContext.scissorValue.equals( _screen ) === false;
 		renderContext.scissorValue.width >>= activeMipmapLevel;
 		renderContext.scissorValue.height >>= activeMipmapLevel;
 
@@ -1282,8 +1460,14 @@ class Renderer {
 
 		//
 
-		_projScreenMatrix.multiplyMatrices( camera.projectionMatrix, camera.matrixWorldInverse );
-		_frustum.setFromProjectionMatrix( _projScreenMatrix, coordinateSystem );
+		const frustum = camera.isArrayCamera ? _frustumArray : _frustum;
+
+		if ( ! camera.isArrayCamera ) {
+
+			_projScreenMatrix.multiplyMatrices( camera.projectionMatrix, camera.matrixWorldInverse );
+			frustum.setFromProjectionMatrix( _projScreenMatrix, camera.coordinateSystem, camera.reversedDepth );
+
+		}
 
 		const renderList = this._renderLists.get( scene, camera );
 		renderList.begin();
@@ -1318,8 +1502,8 @@ class Renderer {
 
 			renderContext.textures = null;
 			renderContext.depthTexture = null;
-			renderContext.width = this.domElement.width;
-			renderContext.height = this.domElement.height;
+			renderContext.width = _drawingBufferSize.width;
+			renderContext.height = _drawingBufferSize.height;
 			renderContext.depth = this.depth;
 			renderContext.stencil = this.stencil;
 
@@ -1333,10 +1517,27 @@ class Renderer {
 
 		//
 
+		renderContext.scissorValue.max( _vector4.set( 0, 0, 0, 0 ) );
+
+		if ( renderContext.scissorValue.x + renderContext.scissorValue.width > renderContext.width ) {
+
+			renderContext.scissorValue.width = Math.max( renderContext.width - renderContext.scissorValue.x, 0 );
+
+		}
+
+		if ( renderContext.scissorValue.y + renderContext.scissorValue.height > renderContext.height ) {
+
+			renderContext.scissorValue.height = Math.max( renderContext.height - renderContext.scissorValue.y, 0 );
+
+		}
+
+		//
+
 		this._background.update( sceneRef, renderList, renderContext );
 
 		//
 
+		renderContext.camera = camera;
 		this.backend.beginRender( renderContext );
 
 		// process render lists
@@ -1370,16 +1571,7 @@ class Renderer {
 
 			this.setRenderTarget( outputRenderTarget, activeCubeFace, activeMipmapLevel );
 
-			const quad = this._quad;
-
-			if ( this._nodes.hasOutputChange( renderTarget.texture ) ) {
-
-				quad.material.fragmentNode = this._nodes.getOutputNode( renderTarget.texture );
-				quad.material.needsUpdate = true;
-
-			}
-
-			this._renderScene( quad, quad.camera, false );
+			this._renderOutput( renderTarget );
 
 		}
 
@@ -1389,14 +1581,62 @@ class Renderer {
 
 		//
 
+		this.inspector.finishRender( this.backend.getTimestampUID( renderContext ) );
+
+		//
+
 		return renderContext;
+
+	}
+
+	_setXRLayerSize( width, height ) {
+
+		// TODO: Find a better solution to resize the canvas when in XR.
+
+		this._canvasTarget._width = width;
+		this._canvasTarget._height = height;
+
+		this.setViewport( 0, 0, width, height );
+
+	}
+
+	/**
+	 * The output pass performs tone mapping and color space conversion.
+	 *
+	 * @private
+	 * @param {RenderTarget} renderTarget - The current render target.
+	 */
+	_renderOutput( renderTarget ) {
+
+		const quad = this._quad;
+
+		if ( this._nodes.hasOutputChange( renderTarget.texture ) ) {
+
+			quad.material.fragmentNode = this._nodes.getOutputNode( renderTarget.texture );
+			quad.material.needsUpdate = true;
+
+		}
+
+		// a clear operation clears the intermediate renderTarget texture, but should not update the screen canvas.
+
+		const currentAutoClear = this.autoClear;
+		const currentXR = this.xr.enabled;
+
+		this.autoClear = false;
+		this.xr.enabled = false;
+
+		this._renderScene( quad, quad.camera, false );
+
+		this.autoClear = currentAutoClear;
+		this.xr.enabled = currentXR;
+
 
 	}
 
 	/**
 	 * Returns the maximum available anisotropy for texture filtering.
 	 *
-	 * @return {Number} The maximum available anisotropy.
+	 * @return {number} The maximum available anisotropy.
 	 */
 	getMaxAnisotropy() {
 
@@ -1407,7 +1647,7 @@ class Renderer {
 	/**
 	 * Returns the active cube face.
 	 *
-	 * @return {Number} The active cube face.
+	 * @return {number} The active cube face.
 	 */
 	getActiveCubeFace() {
 
@@ -1418,7 +1658,7 @@ class Renderer {
 	/**
 	 * Returns the active mipmap level.
 	 *
-	 * @return {Number} The active mipmap level.
+	 * @return {number} The active mipmap level.
 	 */
 	getActiveMipmapLevel() {
 
@@ -1432,7 +1672,7 @@ class Renderer {
 	 * for best compatibility.
 	 *
 	 * @async
-	 * @param {Function} callback - The application's animation loop.
+	 * @param {?onAnimationCallback} callback - The application's animation loop.
 	 * @return {Promise} A Promise that resolves when the set has been executed.
 	 */
 	async setAnimationLoop( callback ) {
@@ -1440,6 +1680,17 @@ class Renderer {
 		if ( this._initialized === false ) await this.init();
 
 		this._animation.setAnimationLoop( callback );
+
+	}
+
+	/**
+	 * Returns the current animation loop callback.
+	 *
+	 * @return {?Function} The current animation loop callback.
+	 */
+	getAnimationLoop() {
+
+		return this._animation.getAnimationLoop();
 
 	}
 
@@ -1471,11 +1722,11 @@ class Renderer {
 	/**
 	 * Returns the pixel ratio.
 	 *
-	 * @return {Number} The pixel ratio.
+	 * @return {number} The pixel ratio.
 	 */
 	getPixelRatio() {
 
-		return this._pixelRatio;
+		return this._canvasTarget.getPixelRatio();
 
 	}
 
@@ -1487,7 +1738,7 @@ class Renderer {
 	 */
 	getDrawingBufferSize( target ) {
 
-		return target.set( this._width * this._pixelRatio, this._height * this._pixelRatio ).floor();
+		return this._canvasTarget.getDrawingBufferSize( target );
 
 	}
 
@@ -1495,26 +1746,22 @@ class Renderer {
 	 * Returns the renderer's size in logical pixels. This method does not honor the pixel ratio.
 	 *
 	 * @param {Vector2} target - The method writes the result in this target object.
-	 * @return {Vector2} The drawing buffer size.
+	 * @return {Vector2} The renderer's size in logical pixels.
 	 */
 	getSize( target ) {
 
-		return target.set( this._width, this._height );
+		return this._canvasTarget.getSize( target );
 
 	}
 
 	/**
-	 * Sets the given pixel ration and resizes the canvas if necessary.
+	 * Sets the given pixel ratio and resizes the canvas if necessary.
 	 *
-	 * @param {Number} [value=1] - The pixel ratio.
+	 * @param {number} [value=1] - The pixel ratio.
 	 */
 	setPixelRatio( value = 1 ) {
 
-		if ( this._pixelRatio === value ) return;
-
-		this._pixelRatio = value;
-
-		this.setSize( this._width, this._height, false );
+		this._canvasTarget.setPixelRatio( value );
 
 	}
 
@@ -1522,56 +1769,37 @@ class Renderer {
 	 * This method allows to define the drawing buffer size by specifying
 	 * width, height and pixel ratio all at once. The size of the drawing
 	 * buffer is computed with this formula:
-	 * ````
+	 * ```js
 	 * size.x = width * pixelRatio;
 	 * size.y = height * pixelRatio;
-	 *```
+	 * ```
 	 *
-	 * @param {Number} width - The width in logical pixels.
-	 * @param {Number} height - The height in logical pixels.
-	 * @param {Number} pixelRatio - The pixel ratio.
+	 * @param {number} width - The width in logical pixels.
+	 * @param {number} height - The height in logical pixels.
+	 * @param {number} pixelRatio - The pixel ratio.
 	 */
 	setDrawingBufferSize( width, height, pixelRatio ) {
 
-		this._width = width;
-		this._height = height;
+		// Renderer can't be resized while presenting in XR.
+		if ( this.xr && this.xr.isPresenting ) return;
 
-		this._pixelRatio = pixelRatio;
-
-		this.domElement.width = Math.floor( width * pixelRatio );
-		this.domElement.height = Math.floor( height * pixelRatio );
-
-		this.setViewport( 0, 0, width, height );
-
-		if ( this._initialized ) this.backend.updateSize();
+		this._canvasTarget.setDrawingBufferSize( width, height, pixelRatio );
 
 	}
 
 	/**
 	 * Sets the size of the renderer.
 	 *
-	 * @param {Number} width - The width in logical pixels.
-	 * @param {Number} height - The height in logical pixels.
-	 * @param {Boolean} [updateStyle=true] - Whether to update the `style` attribute of the canvas or not.
+	 * @param {number} width - The width in logical pixels.
+	 * @param {number} height - The height in logical pixels.
+	 * @param {boolean} [updateStyle=true] - Whether to update the `style` attribute of the canvas or not.
 	 */
 	setSize( width, height, updateStyle = true ) {
 
-		this._width = width;
-		this._height = height;
+		// Renderer can't be resized while presenting in XR.
+		if ( this.xr && this.xr.isPresenting ) return;
 
-		this.domElement.width = Math.floor( width * this._pixelRatio );
-		this.domElement.height = Math.floor( height * this._pixelRatio );
-
-		if ( updateStyle === true ) {
-
-			this.domElement.style.width = width + 'px';
-			this.domElement.style.height = height + 'px';
-
-		}
-
-		this.setViewport( 0, 0, width, height );
-
-		if ( this._initialized ) this.backend.updateSize();
+		this._canvasTarget.setSize( width, height, updateStyle );
 
 	}
 
@@ -1607,61 +1835,46 @@ class Renderer {
 	 */
 	getScissor( target ) {
 
-		const scissor = this._scissor;
-
-		target.x = scissor.x;
-		target.y = scissor.y;
-		target.width = scissor.width;
-		target.height = scissor.height;
-
-		return target;
+		return this._canvasTarget.getScissor( target );
 
 	}
 
 	/**
 	 * Defines the scissor rectangle.
 	 *
-	 * @param {Number | Vector4} x - The horizontal coordinate for the lower left corner of the box in logical pixel unit.
+	 * @param {number | Vector4} x - The horizontal coordinate for the lower left corner of the box in logical pixel unit.
 	 * Instead of passing four arguments, the method also works with a single four-dimensional vector.
-	 * @param {Number} y - The vertical coordinate for the lower left corner of the box in logical pixel unit.
-	 * @param {Number} width - The width of the scissor box in logical pixel unit.
-	 * @param {Number} height - The height of the scissor box in logical pixel unit.
+	 * @param {number} y - The vertical coordinate for the lower left corner of the box in logical pixel unit.
+	 * @param {number} width - The width of the scissor box in logical pixel unit.
+	 * @param {number} height - The height of the scissor box in logical pixel unit.
 	 */
 	setScissor( x, y, width, height ) {
 
-		const scissor = this._scissor;
-
-		if ( x.isVector4 ) {
-
-			scissor.copy( x );
-
-		} else {
-
-			scissor.set( x, y, width, height );
-
-		}
+		this._canvasTarget.setScissor( x, y, width, height );
 
 	}
 
 	/**
 	 * Returns the scissor test value.
 	 *
-	 * @return {Boolean} Whether the scissor test should be enabled or not.
+	 * @return {boolean} Whether the scissor test should be enabled or not.
 	 */
 	getScissorTest() {
 
-		return this._scissorTest;
+		return this._canvasTarget.getScissorTest();
 
 	}
 
 	/**
 	 * Defines the scissor test.
 	 *
-	 * @param {Boolean} boolean - Whether the scissor test should be enabled or not.
+	 * @param {boolean} boolean - Whether the scissor test should be enabled or not.
 	 */
 	setScissorTest( boolean ) {
 
-		this._scissorTest = boolean;
+		this._canvasTarget.setScissorTest( boolean );
+
+		// TODO: Move it to CanvasTarget event listener.
 
 		this.backend.setScissorTest( boolean );
 
@@ -1675,36 +1888,23 @@ class Renderer {
 	 */
 	getViewport( target ) {
 
-		return target.copy( this._viewport );
+		return this._canvasTarget.getViewport( target );
 
 	}
 
 	/**
 	 * Defines the viewport.
 	 *
-	 * @param {Number | Vector4} x - The horizontal coordinate for the lower left corner of the viewport origin in logical pixel unit.
-	 * @param {Number} y - The vertical coordinate for the lower left corner of the viewport origin  in logical pixel unit.
-	 * @param {Number} width - The width of the viewport in logical pixel unit.
-	 * @param {Number} height - The height of the viewport in logical pixel unit.
-	 * @param {Number} minDepth - The minimum depth value of the viewport. WebGPU only.
-	 * @param {Number} maxDepth - The maximum depth value of the viewport. WebGPU only.
+	 * @param {number | Vector4} x - The horizontal coordinate for the lower left corner of the viewport origin in logical pixel unit.
+	 * @param {number} y - The vertical coordinate for the lower left corner of the viewport origin  in logical pixel unit.
+	 * @param {number} width - The width of the viewport in logical pixel unit.
+	 * @param {number} height - The height of the viewport in logical pixel unit.
+	 * @param {number} minDepth - The minimum depth value of the viewport. WebGPU only.
+	 * @param {number} maxDepth - The maximum depth value of the viewport. WebGPU only.
 	 */
 	setViewport( x, y, width, height, minDepth = 0, maxDepth = 1 ) {
 
-		const viewport = this._viewport;
-
-		if ( x.isVector4 ) {
-
-			viewport.copy( x );
-
-		} else {
-
-			viewport.set( x, y, width, height );
-
-		}
-
-		viewport.minDepth = minDepth;
-		viewport.maxDepth = maxDepth;
+		this._canvasTarget.setViewport( x, y, width, height, minDepth, maxDepth );
 
 	}
 
@@ -1724,7 +1924,7 @@ class Renderer {
 	 * Defines the clear color and optionally the clear alpha.
 	 *
 	 * @param {Color} color - The clear color.
-	 * @param {Number} [alpha=1] - The clear alpha.
+	 * @param {number} [alpha=1] - The clear alpha.
 	 */
 	setClearColor( color, alpha = 1 ) {
 
@@ -1736,7 +1936,7 @@ class Renderer {
 	/**
 	 * Returns the clear alpha.
 	 *
-	 * @return {Number} The clear alpha.
+	 * @return {number} The clear alpha.
 	 */
 	getClearAlpha() {
 
@@ -1747,7 +1947,7 @@ class Renderer {
 	/**
 	 * Defines the clear alpha.
 	 *
-	 * @param {Number} alpha - The clear alpha.
+	 * @param {number} alpha - The clear alpha.
 	 */
 	setClearAlpha( alpha ) {
 
@@ -1758,7 +1958,7 @@ class Renderer {
 	/**
 	 * Returns the clear depth.
 	 *
-	 * @return {Number} The clear depth.
+	 * @return {number} The clear depth.
 	 */
 	getClearDepth() {
 
@@ -1769,7 +1969,7 @@ class Renderer {
 	/**
 	 * Defines the clear depth.
 	 *
-	 * @param {Number} depth - The clear depth.
+	 * @param {number} depth - The clear depth.
 	 */
 	setClearDepth( depth ) {
 
@@ -1780,7 +1980,7 @@ class Renderer {
 	/**
 	 * Returns the clear stencil.
 	 *
-	 * @return {Number} The clear stencil.
+	 * @return {number} The clear stencil.
 	 */
 	getClearStencil() {
 
@@ -1791,7 +1991,7 @@ class Renderer {
 	/**
 	 * Defines the clear stencil.
 	 *
-	 * @param {Number} stencil - The clear stencil.
+	 * @param {number} stencil - The clear stencil.
 	 */
 	setClearStencil( stencil ) {
 
@@ -1805,7 +2005,7 @@ class Renderer {
 	 * 3D objects in the scene.
 	 *
 	 * @param {Object3D} object - The 3D object to test.
-	 * @return {Boolean} Whether the 3D object is fully occluded or not.
+	 * @return {boolean} Whether the 3D object is fully occluded or not.
 	 */
 	isOccluded( object ) {
 
@@ -1818,19 +2018,15 @@ class Renderer {
 	/**
 	 * Performs a manual clear operation. This method ignores `autoClear` properties.
 	 *
-	 * @param {Boolean} [color=true] - Whether the color buffer should be cleared or not.
-	 * @param {Boolean} [depth=true] - Whether the depth buffer should be cleared or not.
-	 * @param {Boolean} [stencil=true] - Whether the stencil buffer should be cleared or not.
-	 * @return {Promise} A Promise that resolves when the clear operation has been executed.
-	 * Only returned when the renderer has not been initialized.
+	 * @param {boolean} [color=true] - Whether the color buffer should be cleared or not.
+	 * @param {boolean} [depth=true] - Whether the depth buffer should be cleared or not.
+	 * @param {boolean} [stencil=true] - Whether the stencil buffer should be cleared or not.
 	 */
 	clear( color = true, depth = true, stencil = true ) {
 
 		if ( this._initialized === false ) {
 
-			console.warn( 'THREE.Renderer: .clear() called before the backend is initialized. Try using .clearAsync() instead.' );
-
-			return this.clearAsync( color, depth, stencil );
+			throw new Error( 'Renderer: .clear() called before the backend is initialized. Use "await renderer.init();" before before using this method.' );
 
 		}
 
@@ -1852,6 +2048,10 @@ class Renderer {
 			renderContext.renderTarget = renderTarget;
 			renderContext.depth = renderTarget.depthBuffer;
 			renderContext.stencil = renderTarget.stencilBuffer;
+			// #30329
+			renderContext.clearColorValue = this.backend.getClearColor();
+			renderContext.activeCubeFace = this.getActiveCubeFace();
+			renderContext.activeMipmapLevel = this.getActiveMipmapLevel();
 
 		}
 
@@ -1859,19 +2059,7 @@ class Renderer {
 
 		if ( renderTarget !== null && this._renderTarget === null ) {
 
-			// If a color space transform or tone mapping is required,
-			// the clear operation clears the intermediate renderTarget texture, but does not update the screen canvas.
-
-			const quad = this._quad;
-
-			if ( this._nodes.hasOutputChange( renderTarget.texture ) ) {
-
-				quad.material.fragmentNode = this._nodes.getOutputNode( renderTarget.texture );
-				quad.material.needsUpdate = true;
-
-			}
-
-			this._renderScene( quad, quad.camera, false );
+			this._renderOutput( renderTarget );
 
 		}
 
@@ -1879,114 +2067,181 @@ class Renderer {
 
 	/**
 	 * Performs a manual clear operation of the color buffer. This method ignores `autoClear` properties.
-	 *
-	 * @return {Promise} A Promise that resolves when the clear operation has been executed.
-	 * Only returned when the renderer has not been initialized.
 	 */
 	clearColor() {
 
-		return this.clear( true, false, false );
+		this.clear( true, false, false );
 
 	}
 
 	/**
 	 * Performs a manual clear operation of the depth buffer. This method ignores `autoClear` properties.
-	 *
-	 * @return {Promise} A Promise that resolves when the clear operation has been executed.
-	 * Only returned when the renderer has not been initialized.
 	 */
 	clearDepth() {
 
-		return this.clear( false, true, false );
+		this.clear( false, true, false );
 
 	}
 
 	/**
 	 * Performs a manual clear operation of the stencil buffer. This method ignores `autoClear` properties.
-	 *
-	 * @return {Promise} A Promise that resolves when the clear operation has been executed.
-	 * Only returned when the renderer has not been initialized.
 	 */
 	clearStencil() {
 
-		return this.clear( false, false, true );
+		this.clear( false, false, true );
 
 	}
 
 	/**
-	 * Async version of {@link module:Renderer~Renderer#clear}.
+	 * Async version of {@link Renderer#clear}.
 	 *
 	 * @async
-	 * @param {Boolean} [color=true] - Whether the color buffer should be cleared or not.
-	 * @param {Boolean} [depth=true] - Whether the depth buffer should be cleared or not.
-	 * @param {Boolean} [stencil=true] - Whether the stencil buffer should be cleared or not.
+	 * @deprecated
+	 * @param {boolean} [color=true] - Whether the color buffer should be cleared or not.
+	 * @param {boolean} [depth=true] - Whether the depth buffer should be cleared or not.
+	 * @param {boolean} [stencil=true] - Whether the stencil buffer should be cleared or not.
 	 * @return {Promise} A Promise that resolves when the clear operation has been executed.
 	 */
 	async clearAsync( color = true, depth = true, stencil = true ) {
 
-		if ( this._initialized === false ) await this.init();
+		warnOnce( 'Renderer: "clearAsync()" has been deprecated. Use "clear()" and "await renderer.init();" when creating the renderer.' ); // @deprecated r181
+
+		await this.init();
 
 		this.clear( color, depth, stencil );
 
 	}
 
 	/**
-	 * Async version of {@link module:Renderer~Renderer#clearColor}.
+	 * Async version of {@link Renderer#clearColor}.
 	 *
 	 * @async
+	 * @deprecated
 	 * @return {Promise} A Promise that resolves when the clear operation has been executed.
 	 */
 	async clearColorAsync() {
 
-		this.clearAsync( true, false, false );
+		warnOnce( 'Renderer: "clearColorAsync()" has been deprecated. Use "clearColor()" and "await renderer.init();" when creating the renderer.' ); // @deprecated r181
+
+		this.clear( true, false, false );
 
 	}
 
 	/**
-	 * Async version of {@link module:Renderer~Renderer#clearDepth}.
+	 * Async version of {@link Renderer#clearDepth}.
 	 *
 	 * @async
+	 * @deprecated
 	 * @return {Promise} A Promise that resolves when the clear operation has been executed.
 	 */
 	async clearDepthAsync() {
 
-		this.clearAsync( false, true, false );
+		warnOnce( 'Renderer: "clearDepthAsync()" has been deprecated. Use "clearDepth()" and "await renderer.init();" when creating the renderer.' ); // @deprecated r181
+
+		this.clear( false, true, false );
 
 	}
 
 	/**
-	 * Async version of {@link module:Renderer~Renderer#clearStencil}.
+	 * Async version of {@link Renderer#clearStencil}.
 	 *
 	 * @async
+	 * @deprecated
 	 * @return {Promise} A Promise that resolves when the clear operation has been executed.
 	 */
 	async clearStencilAsync() {
 
-		this.clearAsync( false, false, true );
+		warnOnce( 'Renderer: "clearStencilAsync()" has been deprecated. Use "clearStencil()" and "await renderer.init();" when creating the renderer.' ); // @deprecated r181
+
+		this.clear( false, false, true );
 
 	}
 
 	/**
-	 * The current output tone mapping of the renderer. When a render target is set,
-	 * the output tone mapping is always `NoToneMapping`.
+	 * Returns `true` if a framebuffer target is needed to perform tone mapping or color space conversion.
+	 * If this is the case, the renderer allocates an internal render target for that purpose.
 	 *
-	 * @type {Number}
+	 */
+	get needsFrameBufferTarget() {
+
+		const useToneMapping = this.currentToneMapping !== NoToneMapping;
+		const useColorSpace = this.currentColorSpace !== ColorManagement.workingColorSpace;
+
+		return useToneMapping || useColorSpace;
+
+	}
+
+	/**
+	 * The number of samples used for multi-sample anti-aliasing (MSAA).
+	 *
+	 * @type {number}
+	 * @default 0
+	 */
+	get samples() {
+
+		return this._samples;
+
+	}
+
+	/**
+	 * The current number of samples used for multi-sample anti-aliasing (MSAA).
+	 *
+	 * When rendering to a custom render target, the number of samples of that render target is used.
+	 * If the renderer needs an internal framebuffer target for tone mapping or color space conversion,
+	 * the number of samples is set to 0.
+	 *
+	 * @type {number}
+	 */
+	get currentSamples() {
+
+		let samples = this._samples;
+
+		if ( this._renderTarget !== null ) {
+
+			samples = this._renderTarget.samples;
+
+		} else if ( this.needsFrameBufferTarget ) {
+
+			samples = 0;
+
+		}
+
+		return samples;
+
+	}
+
+	/**
+	 * The current tone mapping of the renderer. When not producing screen output,
+	 * the tone mapping is always `NoToneMapping`.
+	 *
+	 * @type {number}
 	 */
 	get currentToneMapping() {
 
-		return this._renderTarget !== null ? NoToneMapping : this.toneMapping;
+		return this.isOutputTarget ? this.toneMapping : NoToneMapping;
 
 	}
 
 	/**
-	 * The current output color space of the renderer. When a render target is set,
-	 * the output color space is always `LinearSRGBColorSpace`.
+	 * The current color space of the renderer. When not producing screen output,
+	 * the color space is always the working color space.
 	 *
-	 * @type {String}
+	 * @type {string}
 	 */
 	get currentColorSpace() {
 
-		return this._renderTarget !== null ? LinearSRGBColorSpace : this.outputColorSpace;
+		return this.isOutputTarget ? this.outputColorSpace : ColorManagement.workingColorSpace;
+
+	}
+
+	/**
+	 * Returns `true` if the rendering settings are set to screen output.
+	 *
+	 * @returns {boolean} True if the current render target is the same of output render target or `null`, otherwise false.
+	 */
+	get isOutputTarget() {
+
+		return this._renderTarget === this._outputRenderTarget || this._renderTarget === null;
 
 	}
 
@@ -1996,17 +2251,30 @@ class Renderer {
 	 */
 	dispose() {
 
-		this.info.dispose();
-		this.backend.dispose();
+		if ( this._initialized === true ) {
 
-		this._animation.dispose();
-		this._objects.dispose();
-		this._pipelines.dispose();
-		this._nodes.dispose();
-		this._bindings.dispose();
-		this._renderLists.dispose();
-		this._renderContexts.dispose();
-		this._textures.dispose();
+			this.info.dispose();
+			this.backend.dispose();
+
+			this._animation.dispose();
+			this._objects.dispose();
+			this._geometries.dispose();
+			this._pipelines.dispose();
+			this._nodes.dispose();
+			this._bindings.dispose();
+			this._renderLists.dispose();
+			this._renderContexts.dispose();
+			this._textures.dispose();
+
+			if ( this._frameBufferTarget !== null ) this._frameBufferTarget.dispose();
+
+			Object.values( this.backend.timestampQueryPool ).forEach( queryPool => {
+
+				if ( queryPool !== null ) queryPool.dispose();
+
+			} );
+
+		}
 
 		this.setRenderTarget( null );
 		this.setAnimationLoop( null );
@@ -2018,9 +2286,9 @@ class Renderer {
 	 * target the default framebuffer (meaning the canvas) anymore but a custom framebuffer.
 	 * Use `null` as the first argument to reset the state.
 	 *
-	 * @param {RenderTarget?} renderTarget - The render target to set.
-	 * @param {Number} [activeCubeFace=0] - The active cube face.
-	 * @param {Number} [activeMipmapLevel=0] - The active mipmap level.
+	 * @param {?RenderTarget} renderTarget - The render target to set.
+	 * @param {number} [activeCubeFace=0] - The active cube face.
+	 * @param {number} [activeMipmapLevel=0] - The active mipmap level.
 	 */
 	setRenderTarget( renderTarget, activeCubeFace = 0, activeMipmapLevel = 0 ) {
 
@@ -2033,7 +2301,7 @@ class Renderer {
 	/**
 	 * Returns the current render target.
 	 *
-	 * @return {RenderTarget?} The render target. Returns `null` if no render target is set.
+	 * @return {?RenderTarget} The render target. Returns `null` if no render target is set.
 	 */
 	getRenderTarget() {
 
@@ -2042,7 +2310,70 @@ class Renderer {
 	}
 
 	/**
-	 * Callback for {@link module:Renderer~Renderer#setRenderObjectFunction}.
+	 * Sets the output render target for the renderer.
+	 *
+	 * @param {Object} renderTarget - The render target to set as the output target.
+	 */
+	setOutputRenderTarget( renderTarget ) {
+
+		this._outputRenderTarget = renderTarget;
+
+	}
+
+	/**
+	 * Returns the current output target.
+	 *
+	 * @return {?RenderTarget} The current output render target. Returns `null` if no output target is set.
+	 */
+	getOutputRenderTarget() {
+
+		return this._outputRenderTarget;
+
+	}
+
+	/**
+	 * Sets the canvas target. The canvas target manages the HTML canvas
+	 * or the offscreen canvas the renderer draws into.
+	 *
+	 * @param {CanvasTarget} canvasTarget - The canvas target.
+	 */
+	setCanvasTarget( canvasTarget ) {
+
+		this._canvasTarget.removeEventListener( 'resize', this._onCanvasTargetResize );
+
+		this._canvasTarget = canvasTarget;
+		this._canvasTarget.addEventListener( 'resize', this._onCanvasTargetResize );
+
+	}
+
+	/**
+	 * Returns the current canvas target.
+	 *
+	 * @return {CanvasTarget} The current canvas target.
+	 */
+	getCanvasTarget() {
+
+		return this._canvasTarget;
+
+	}
+
+	/**
+	 * Resets the renderer to the initial state before WebXR started.
+	 *
+	 */
+	_resetXRState() {
+
+		this.backend.setXRTarget( null );
+		this.setOutputRenderTarget( null );
+		this.setRenderTarget( null );
+
+		this._frameBufferTarget.dispose();
+		this._frameBufferTarget = null;
+
+	}
+
+	/**
+	 * Callback for {@link Renderer#setRenderObjectFunction}.
 	 *
 	 * @callback renderObjectFunction
 	 * @param {Object3D} object - The 3D object.
@@ -2050,22 +2381,22 @@ class Renderer {
 	 * @param {Camera} camera - The camera the object should be rendered with.
 	 * @param {BufferGeometry} geometry - The object's geometry.
 	 * @param {Material} material - The object's material.
-	 * @param {Object?} group - Only relevant for objects using multiple materials. This represents a group entry from the respective `BufferGeometry`.
+	 * @param {?Object} group - Only relevant for objects using multiple materials. This represents a group entry from the respective `BufferGeometry`.
 	 * @param {LightsNode} lightsNode - The current lights node.
 	 * @param {ClippingContext} clippingContext - The clipping context.
-	 * @param {String?} [passId=null] - An optional ID for identifying the pass.
+	 * @param {?string} [passId=null] - An optional ID for identifying the pass.
 	 */
 
 	/**
 	 * Sets the given render object function. Calling this method overwrites the default implementation
-	 * which is {@link module:Renderer~Renderer#renderObject}. Defining a custom function can be useful
+	 * which is {@link Renderer#renderObject}. Defining a custom function can be useful
 	 * if you want to modify the way objects are rendered. For example you can define things like "every
 	 * object that has material of a certain type should perform a pre-pass with a special overwrite material".
 	 * The custom function must always call `renderObject()` in its implementation.
 	 *
 	 * Use `null` as the first argument to reset the state.
 	 *
-	 * @param {module:Renderer~renderObjectFunction?} renderObjectFunction - The render object function.
+	 * @param {?renderObjectFunction} renderObjectFunction - The render object function.
 	 */
 	setRenderObjectFunction( renderObjectFunction ) {
 
@@ -2076,7 +2407,7 @@ class Renderer {
 	/**
 	 * Returns the current render object function.
 	 *
-	 * @return {Function?} The current render object function. Returns `null` if no function is set.
+	 * @return {?Function} The current render object function. Returns `null` if no function is set.
 	 */
 	getRenderObjectFunction() {
 
@@ -2089,15 +2420,16 @@ class Renderer {
 	 * if the renderer has been initialized.
 	 *
 	 * @param {Node|Array<Node>} computeNodes - The compute node(s).
-	 * @return {Promise?} A Promise that resolve when the compute has finished. Only returned when the renderer has not been initialized.
+	 * @param {?(Array<number>|number)} [dispatchSizeOrCount=null] - Array with [ x, y, z ] values for dispatch or a single number for the count.
+	 * @return {Promise|undefined} A Promise that resolve when the compute has finished. Only returned when the renderer has not been initialized.
 	 */
-	compute( computeNodes ) {
+	compute( computeNodes, dispatchSizeOrCount = null ) {
 
-		if ( this.isDeviceLost === true ) return;
+		if ( this._isDeviceLost === true ) return;
 
 		if ( this._initialized === false ) {
 
-			console.warn( 'THREE.Renderer: .compute() called before the backend is initialized. Try using .computeAsync() instead.' );
+			warn( 'Renderer: .compute() called before the backend is initialized. Try using .computeAsync() instead.' );
 
 			return this.computeAsync( computeNodes );
 
@@ -2116,6 +2448,12 @@ class Renderer {
 		this.info.compute.frameCalls ++;
 
 		nodeFrame.renderId = this.info.calls;
+
+		//
+
+		this.backend.updateTimeStampUID( computeNodes );
+
+		this.inspector.beginCompute( this.backend.getTimestampUID( computeNodes ), computeNodes );
 
 		//
 
@@ -2145,7 +2483,7 @@ class Renderer {
 					computeNode.removeEventListener( 'dispose', dispose );
 
 					pipelines.delete( computeNode );
-					bindings.delete( computeNode );
+					bindings.deleteForCompute( computeNode );
 					nodes.delete( computeNode );
 
 				};
@@ -2170,7 +2508,7 @@ class Renderer {
 			const computeBindings = bindings.getForCompute( computeNode );
 			const computePipeline = pipelines.getForCompute( computeNode, computeBindings );
 
-			backend.compute( computeNodes, computeNode, computeBindings, computePipeline );
+			backend.compute( computeNodes, computeNode, computeBindings, computePipeline, dispatchSizeOrCount );
 
 		}
 
@@ -2180,6 +2518,10 @@ class Renderer {
 
 		nodeFrame.renderId = previousRenderId;
 
+		//
+
+		this.inspector.finishCompute( this.backend.getTimestampUID( computeNodes ) );
+
 	}
 
 	/**
@@ -2187,15 +2529,16 @@ class Renderer {
 	 *
 	 * @async
 	 * @param {Node|Array<Node>} computeNodes - The compute node(s).
-	 * @return {Promise?} A Promise that resolve when the compute has finished.
+	 * @param {?(Array<number>|number)} [dispatchSizeOrCount=null] - Array with [ x, y, z ] values for dispatch or a single number for the count.
+	 * @return {Promise} A Promise that resolve when the compute has finished.
 	 */
-	async computeAsync( computeNodes ) {
+	async computeAsync( computeNodes, dispatchSizeOrCount = null ) {
 
-		if ( this._initialized === false ) await this.init();
+		warnOnce( 'Renderer: "computeAsync()" has been deprecated. Use "compute()" and "await renderer.init();" when creating the renderer.' ); // @deprecated r181
 
-		this.compute( computeNodes );
+		await this.init();
 
-		await this.backend.resolveTimestampAsync( computeNodes, 'compute' );
+		this.compute( computeNodes, dispatchSizeOrCount );
 
 	}
 
@@ -2203,14 +2546,25 @@ class Renderer {
 	 * Checks if the given feature is supported by the selected backend.
 	 *
 	 * @async
-	 * @param {String} name - The feature's name.
-	 * @return {Promise<Boolean>} A Promise that resolves with a bool that indicates whether the feature is supported or not.
+	 * @deprecated
+	 * @param {string} name - The feature's name.
+	 * @return {Promise<boolean>} A Promise that resolves with a bool that indicates whether the feature is supported or not.
 	 */
 	async hasFeatureAsync( name ) {
 
+		warnOnce( 'Renderer: "hasFeatureAsync()" has been deprecated. Use "hasFeature()" and "await renderer.init();" when creating the renderer.' ); // @deprecated r181
+
+		await this.init();
+
+		return this.hasFeature( name );
+
+	}
+
+	async resolveTimestampsAsync( type = 'render' ) {
+
 		if ( this._initialized === false ) await this.init();
 
-		return this.backend.hasFeature( name );
+		return this.backend.resolveTimestampsAsync( type );
 
 	}
 
@@ -2218,16 +2572,14 @@ class Renderer {
 	 * Checks if the given feature is supported by the selected backend. If the
 	 * renderer has not been initialized, this method always returns `false`.
 	 *
-	 * @param {String} name - The feature's name.
-	 * @return {Boolean} Whether the feature is supported or not.
+	 * @param {string} name - The feature's name.
+	 * @return {boolean} Whether the feature is supported or not.
 	 */
 	hasFeature( name ) {
 
 		if ( this._initialized === false ) {
 
-			console.warn( 'THREE.Renderer: .hasFeature() called before the backend is initialized. Try using .hasFeatureAsync() instead.' );
-
-			return false;
+			throw new Error( 'Renderer: .hasFeature() called before the backend is initialized. Use "await renderer.init();" before before using this method.' );
 
 		}
 
@@ -2238,7 +2590,7 @@ class Renderer {
 	/**
 	 * Returns `true` when the renderer has been initialized.
 	 *
-	 * @return {Boolean} Whether the renderer has been initialized or not.
+	 * @return {boolean} Whether the renderer has been initialized or not.
 	 */
 	hasInitialized() {
 
@@ -2251,19 +2603,22 @@ class Renderer {
 	 * (which can cause noticeable lags due to decode and GPU upload overhead).
 	 *
 	 * @async
+	 * @deprecated
 	 * @param {Texture} texture - The texture.
 	 * @return {Promise} A Promise that resolves when the texture has been initialized.
 	 */
 	async initTextureAsync( texture ) {
 
-		if ( this._initialized === false ) await this.init();
+		warnOnce( 'Renderer: "initTextureAsync()" has been deprecated. Use "initTexture()" and "await renderer.init();" when creating the renderer.' ); // @deprecated r181
 
-		this._textures.updateTexture( texture );
+		await this.init();
+
+		this.initTexture( texture );
 
 	}
 
 	/**
-	 * Initializes the given textures. Useful for preloading a texture rather than waiting until first render
+	 * Initializes the given texture. Useful for preloading a texture rather than waiting until first render
 	 * (which can cause noticeable lags due to decode and GPU upload overhead).
 	 *
 	 * This method can only be used if the renderer has been initialized.
@@ -2274,7 +2629,7 @@ class Renderer {
 
 		if ( this._initialized === false ) {
 
-			console.warn( 'THREE.Renderer: .initTexture() called before the backend is initialized. Try using .initTextureAsync() instead.' );
+			throw new Error( 'Renderer: .initTexture() called before the backend is initialized. Use "await renderer.init();" before before using this method.' );
 
 		}
 
@@ -2286,7 +2641,7 @@ class Renderer {
 	 * Copies the current bound framebuffer into the given texture.
 	 *
 	 * @param {FramebufferTexture} framebufferTexture - The texture.
-	 * @param {Vector2|Vector4} rectangle - A two or four dimensional vector that defines the rectangular portion of the framebuffer that should be copied.
+	 * @param {?(Vector2|Vector4)} [rectangle=null] - A two or four dimensional vector that defines the rectangular portion of the framebuffer that should be copied.
 	 */
 	copyFramebufferToTexture( framebufferTexture, rectangle = null ) {
 
@@ -2302,7 +2657,7 @@ class Renderer {
 
 			} else {
 
-				console.error( 'THREE.Renderer.copyFramebufferToTexture: Invalid rectangle.' );
+				error( 'Renderer.copyFramebufferToTexture: Invalid rectangle.' );
 
 				return;
 
@@ -2343,23 +2698,28 @@ class Renderer {
 
 		this.backend.copyFramebufferToTexture( framebufferTexture, renderContext, rectangle );
 
+		this._inspector.copyFramebufferToTexture( framebufferTexture );
+
 	}
 
 	/**
-	 * Copies data of source texture into a destination texture.
+	 * Copies data of the given source texture into a destination texture.
 	 *
 	 * @param {Texture} srcTexture - The source texture.
 	 * @param {Texture} dstTexture - The destination texture.
 	 * @param {Box2|Box3} [srcRegion=null] - A bounding box which describes the source region. Can be two or three-dimensional.
 	 * @param {Vector2|Vector3} [dstPosition=null] - A vector that represents the origin of the destination region. Can be two or three-dimensional.
-	 * @param {Number} level - The mipmap level to copy.
+	 * @param {number} [srcLevel=0] - The source mip level to copy from.
+	 * @param {number} [dstLevel=0] - The destination mip level to copy to.
 	 */
-	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, level = 0 ) {
+	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0 ) {
 
 		this._textures.updateTexture( srcTexture );
 		this._textures.updateTexture( dstTexture );
 
-		this.backend.copyTextureToTexture( srcTexture, dstTexture, srcRegion, dstPosition, level );
+		this.backend.copyTextureToTexture( srcTexture, dstTexture, srcRegion, dstPosition, srcLevel, dstLevel );
+
+		this._inspector.copyTextureToTexture( srcTexture, dstTexture );
 
 	}
 
@@ -2368,12 +2728,12 @@ class Renderer {
 	 *
 	 * @async
 	 * @param {RenderTarget} renderTarget - The render target to read from.
-	 * @param {Number} x - The `x` coordinate of the copy region's origin.
-	 * @param {Number} y - The `y` coordinate of the copy region's origin.
-	 * @param {Number} width - The width of the copy region.
-	 * @param {Number} height - The height of the copy region.
-	 * @param {Number} [textureIndex=0] - The texture index of a MRT render target.
-	 * @param {Number} [faceIndex=0] - The active cube face index.
+	 * @param {number} x - The `x` coordinate of the copy region's origin.
+	 * @param {number} y - The `y` coordinate of the copy region's origin.
+	 * @param {number} width - The width of the copy region.
+	 * @param {number} height - The height of the copy region.
+	 * @param {number} [textureIndex=0] - The texture index of a MRT render target.
+	 * @param {number} [faceIndex=0] - The active cube face index.
 	 * @return {Promise<TypedArray>} A Promise that resolves when the read has been finished. The resolve provides the read data as a typed array.
 	 */
 	async readRenderTargetPixelsAsync( renderTarget, x, y, width, height, textureIndex = 0, faceIndex = 0 ) {
@@ -2388,7 +2748,7 @@ class Renderer {
 	 *
 	 * @param {Object3D} object - The 3D object to process (usually a scene).
 	 * @param {Camera} camera - The camera the object is rendered with.
-	 * @param {Number} groupOrder - The group order is derived from the `renderOrder` of groups and is used to group 3D objects within groups.
+	 * @param {number} groupOrder - The group order is derived from the `renderOrder` of groups and is used to group 3D objects within groups.
 	 * @param {RenderList} renderList - The current render list.
 	 * @param {ClippingContext} clippingContext - The current clipping context.
 	 */
@@ -2416,7 +2776,9 @@ class Renderer {
 
 			} else if ( object.isSprite ) {
 
-				if ( ! object.frustumCulled || _frustum.intersectsSprite( object ) ) {
+				const frustum = camera.isArrayCamera ? _frustumArray : _frustum;
+
+				if ( ! object.frustumCulled || frustum.intersectsSprite( object, camera ) ) {
 
 					if ( this.sortObjects === true ) {
 
@@ -2436,11 +2798,13 @@ class Renderer {
 
 			} else if ( object.isLineLoop ) {
 
-				console.error( 'THREE.Renderer: Objects of type THREE.LineLoop are not supported. Please use THREE.Line or THREE.LineSegments.' );
+				error( 'Renderer: Objects of type THREE.LineLoop are not supported. Please use THREE.Line or THREE.LineSegments.' );
 
 			} else if ( object.isMesh || object.isLine || object.isPoints ) {
 
-				if ( ! object.frustumCulled || _frustum.intersectsObject( object ) ) {
+				const frustum = camera.isArrayCamera ? _frustumArray : _frustum;
+
+				if ( ! object.frustumCulled || frustum.intersectsObject( object, camera ) ) {
 
 					const { geometry, material } = object;
 
@@ -2589,55 +2953,104 @@ class Renderer {
 	 * @param {Camera} camera - The camera the render list should be rendered with.
 	 * @param {Scene} scene - The scene the render list belongs to.
 	 * @param {LightsNode} lightsNode - The current lights node.
-	 * @param {String?} [passId=null] - An optional ID for identifying the pass.
+	 * @param {?string} [passId=null] - An optional ID for identifying the pass.
 	 */
 	_renderObjects( renderList, camera, scene, lightsNode, passId = null ) {
 
-		// process renderable objects
-
 		for ( let i = 0, il = renderList.length; i < il; i ++ ) {
 
-			const renderItem = renderList[ i ];
+			const { object, geometry, material, group, clippingContext } = renderList[ i ];
 
-			// @TODO: Add support for multiple materials per object. This will require to extract
-			// the material from the renderItem object and pass it with its group data to renderObject().
+			this._currentRenderObjectFunction( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId );
 
-			const { object, geometry, material, group, clippingContext } = renderItem;
+		}
 
-			if ( camera.isArrayCamera ) {
+	}
 
-				const cameras = camera.cameras;
+	/**
+	 * Retrieves shadow nodes for the given material. This is used to setup shadow passes.
+	 * The result is cached per material and updated when the material's version changes.
+	 *
+	 * @param {Material} material
+	 * @returns {Object} - The shadow nodes for the material.
+	 */
+	_getShadowNodes( material ) {
 
-				for ( let j = 0, jl = cameras.length; j < jl; j ++ ) {
+		const version = material.version;
 
-					const camera2 = cameras[ j ];
+		let cache = this._cacheShadowNodes.get( material );
 
-					if ( object.layers.test( camera2.layers ) ) {
+		if ( cache === undefined || cache.version !== version ) {
 
-						const vp = camera2.viewport;
-						const minDepth = ( vp.minDepth === undefined ) ? 0 : vp.minDepth;
-						const maxDepth = ( vp.maxDepth === undefined ) ? 1 : vp.maxDepth;
+			const hasMap = material.map !== null;
+			const hasColorNode = material.colorNode && material.colorNode.isNode;
+			const hasCastShadowNode = material.castShadowNode && material.castShadowNode.isNode;
 
-						const viewportValue = this._currentRenderContext.viewportValue;
-						viewportValue.copy( vp ).multiplyScalar( this._pixelRatio ).floor();
-						viewportValue.minDepth = minDepth;
-						viewportValue.maxDepth = maxDepth;
+			let positionNode = null;
+			let colorNode = null;
+			let depthNode = null;
 
-						this.backend.updateViewport( this._currentRenderContext );
+			if ( hasMap || hasColorNode || hasCastShadowNode ) {
 
-						this._currentRenderObjectFunction( object, scene, camera2, geometry, material, group, lightsNode, clippingContext, passId );
+				let shadowRGB;
+				let shadowAlpha;
 
-					}
+				if ( hasCastShadowNode ) {
+
+					shadowRGB = material.castShadowNode.rgb;
+					shadowAlpha = material.castShadowNode.a;
+
+				} else {
+
+					shadowRGB = vec3( 0 );
+					shadowAlpha = float( 1 );
 
 				}
 
-			} else {
+				if ( hasMap ) {
 
-				this._currentRenderObjectFunction( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId );
+					shadowAlpha = shadowAlpha.mul( reference( 'map', 'texture', material ).a );
+
+				}
+
+				if ( hasColorNode ) {
+
+					shadowAlpha = shadowAlpha.mul( material.colorNode.a );
+
+				}
+
+				colorNode = vec4( shadowRGB, shadowAlpha );
 
 			}
 
+			if ( material.depthNode && material.depthNode.isNode ) {
+
+				depthNode = material.depthNode;
+
+			}
+
+			if ( material.castShadowPositionNode && material.castShadowPositionNode.isNode ) {
+
+				positionNode = material.castShadowPositionNode;
+
+			} else if ( material.positionNode && material.positionNode.isNode ) {
+
+				positionNode = material.positionNode;
+
+			}
+
+			cache = {
+				version,
+				colorNode,
+				depthNode,
+				positionNode
+			};
+
+			this._cacheShadowNodes.set( material, cache );
+
 		}
+
+		return cache;
 
 	}
 
@@ -2650,16 +3063,18 @@ class Renderer {
 	 * @param {Camera} camera - The camera the object should be rendered with.
 	 * @param {BufferGeometry} geometry - The object's geometry.
 	 * @param {Material} material - The object's material.
-	 * @param {Object?} group - Only relevant for objects using multiple materials. This represents a group entry from the respective `BufferGeometry`.
+	 * @param {?Object} group - Only relevant for objects using multiple materials. This represents a group entry from the respective `BufferGeometry`.
 	 * @param {LightsNode} lightsNode - The current lights node.
-	 * @param {ClippingContext} clippingContext - The clipping context.
-	 * @param {String?} [passId=null] - An optional ID for identifying the pass.
+	 * @param {?ClippingContext} clippingContext - The clipping context.
+	 * @param {?string} [passId=null] - An optional ID for identifying the pass.
 	 */
 	renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext = null, passId = null ) {
 
-		let overridePositionNode;
-		let overrideColorNode;
-		let overrideDepthNode;
+		let materialOverride = false;
+		let materialColorNode;
+		let materialDepthNode;
+		let materialPositionNode;
+		let materialSide;
 
 		//
 
@@ -2667,13 +3082,20 @@ class Renderer {
 
 		//
 
-		if ( scene.overrideMaterial !== null ) {
+		if ( material.allowOverride === true && scene.overrideMaterial !== null ) {
 
 			const overrideMaterial = scene.overrideMaterial;
 
+			materialOverride = true;
+
+			// store original nodes
+			materialColorNode = scene.overrideMaterial.colorNode;
+			materialDepthNode = scene.overrideMaterial.depthNode;
+			materialPositionNode = scene.overrideMaterial.positionNode;
+			materialSide = scene.overrideMaterial.side;
+
 			if ( material.positionNode && material.positionNode.isNode ) {
 
-				overridePositionNode = overrideMaterial.positionNode;
 				overrideMaterial.positionNode = material.positionNode;
 
 			}
@@ -2682,23 +3104,15 @@ class Renderer {
 			overrideMaterial.alphaMap = material.alphaMap;
 			overrideMaterial.transparent = material.transparent || material.transmission > 0;
 
-			if ( overrideMaterial.isShadowNodeMaterial ) {
+			if ( overrideMaterial.isShadowPassMaterial ) {
+
+				const { colorNode, depthNode, positionNode } = this._getShadowNodes( material );
 
 				overrideMaterial.side = material.shadowSide === null ? material.side : material.shadowSide;
 
-				if ( material.depthNode && material.depthNode.isNode ) {
-
-					overrideDepthNode = overrideMaterial.depthNode;
-					overrideMaterial.depthNode = material.depthNode;
-
-				}
-
-				if ( material.castShadowNode && material.castShadowNode.isNode ) {
-
-					overrideColorNode = overrideMaterial.colorNode;
-					overrideMaterial.colorNode = material.castShadowNode;
-
-				}
+				if ( colorNode !== null ) overrideMaterial.colorNode = colorNode;
+				if ( depthNode !== null ) overrideMaterial.depthNode = depthNode;
+				if ( positionNode !== null ) overrideMaterial.positionNode = positionNode;
 
 			}
 
@@ -2726,21 +3140,12 @@ class Renderer {
 
 		//
 
-		if ( overridePositionNode !== undefined ) {
+		if ( materialOverride ) {
 
-			scene.overrideMaterial.positionNode = overridePositionNode;
-
-		}
-
-		if ( overrideDepthNode !== undefined ) {
-
-			scene.overrideMaterial.depthNode = overrideDepthNode;
-
-		}
-
-		if ( overrideColorNode !== undefined ) {
-
-			scene.overrideMaterial.colorNode = overrideColorNode;
+			scene.overrideMaterial.colorNode = materialColorNode;
+			scene.overrideMaterial.depthNode = materialDepthNode;
+			scene.overrideMaterial.positionNode = materialPositionNode;
+			scene.overrideMaterial.side = materialSide;
 
 		}
 
@@ -2760,9 +3165,9 @@ class Renderer {
 	 * @param {Scene} scene - The scene the 3D object belongs to.
 	 * @param {Camera} camera - The camera the object should be rendered with.
 	 * @param {LightsNode} lightsNode - The current lights node.
-	 * @param {Object?} group - Only relevant for objects using multiple materials. This represents a group entry from the respective `BufferGeometry`.
+	 * @param {?{start: number, count: number}} group - Only relevant for objects using multiple materials. This represents a group entry from the respective `BufferGeometry`.
 	 * @param {ClippingContext} clippingContext - The clipping context.
-	 * @param {String?} [passId=null] - An optional ID for identifying the pass.
+	 * @param {string} [passId] - An optional ID for identifying the pass.
 	 */
 	_renderObjectDirect( object, material, scene, camera, lightsNode, group, clippingContext, passId ) {
 
@@ -2815,9 +3220,9 @@ class Renderer {
 	 * @param {Scene} scene - The scene the 3D object belongs to.
 	 * @param {Camera} camera - The camera the object should be rendered with.
 	 * @param {LightsNode} lightsNode - The current lights node.
-	 * @param {Object?} group - Only relevant for objects using multiple materials. This represents a group entry from the respective `BufferGeometry`.
+	 * @param {?{start: number, count: number}} group - Only relevant for objects using multiple materials. This represents a group entry from the respective `BufferGeometry`.
 	 * @param {ClippingContext} clippingContext - The clipping context.
-	 * @param {String?} [passId=null] - An optional ID for identifying the pass.
+	 * @param {string} [passId] - An optional ID for identifying the pass.
 	 */
 	_createObjectPipeline( object, material, scene, camera, lightsNode, group, clippingContext, passId ) {
 
@@ -2841,13 +3246,24 @@ class Renderer {
 	}
 
 	/**
+	 * Callback when the canvas has been resized.
+	 *
+	 * @private
+	 */
+	_onCanvasTargetResize() {
+
+		if ( this._initialized ) this.backend.updateSize();
+
+	}
+
+	/**
 	 * Alias for `compileAsync()`.
 	 *
 	 * @method
 	 * @param {Object3D} scene - The scene or 3D object to precompile.
 	 * @param {Camera} camera - The camera that is used to render the scene.
 	 * @param {Scene} targetScene - If the first argument is a 3D object, this parameter must represent the scene the 3D object is going to be added.
-	 * @return {Promise} A Promise that resolves when the compile has been finished.
+	 * @return {function(Object3D, Camera, ?Scene): Promise|undefined} A Promise that resolves when the compile has been finished.
 	 */
 	get compile() {
 
@@ -2856,5 +3272,13 @@ class Renderer {
 	}
 
 }
+
+/**
+ * Animation loop parameter of `renderer.setAnimationLoop()`.
+ *
+ * @callback onAnimationCallback
+ * @param {DOMHighResTimeStamp} time - A timestamp indicating the end time of the previous frame's rendering.
+ * @param {XRFrame} [frame] - A reference to the current XR frame. Only relevant when using XR rendering.
+ */
 
 export default Renderer;
